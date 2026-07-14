@@ -92,8 +92,28 @@ function broadcastLeaderboard(io, grid, profiles) {
  * @param {Map<string, object>} profiles — per-socket profile tracker
  */
 function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
-  // Generate a unique identity
-  const profile = generateUniqueProfile(profiles);
+  // Check if user has an existing persisted identity in handshake auth
+  let profile = socket.handshake.auth?.profile;
+
+  if (profile && profile.username && profile.color) {
+    const isColorValid = typeof profile.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(profile.color);
+    const isNameValid = typeof profile.username === 'string' && profile.username.trim().length > 0;
+    
+    if (isColorValid && isNameValid) {
+      profile = {
+        username: profile.username.trim(),
+        color: profile.color
+      };
+    } else {
+      profile = null;
+    }
+  }
+
+  if (!profile) {
+    // Generate a unique identity
+    profile = generateUniqueProfile(profiles);
+  }
+
   profiles.set(socket.id, profile);
 
   // Send profile to user immediately
@@ -124,7 +144,13 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
   // Send full initial state including historical click counts and leaderboard
   socket.emit('grid:init', {
     gridSize: grid.size,
-    cells: grid.getFullState(),
+    cells: grid.getFullState().map(cell => {
+      const p = profiles.get(cell.owner)
+      return {
+        ...cell,
+        ownerName: p ? p.username : 'Anonymous'
+      }
+    }),
     clickHistory: Object.fromEntries(grid.clickCounts),
     onlineUsers: users.count,
     leaderboard: getLeaderboardState(),
@@ -199,11 +225,13 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
         });
 
         // Broadcast conflict click so other clients update heatmap clickCount
+        const winnerProfile = profiles.get(winner.owner)
         io.emit('cell-updated', {
           x,
           y,
           color: winner.color,
           owner: winner.owner,
+          ownerName: winnerProfile ? winnerProfile.username : 'Anonymous',
           clickCount: result.clickCount,
         });
 
@@ -234,6 +262,7 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
 
         io.emit('cell-updated', {
           ...result.cell,
+          ownerName: profile.username,
           clickCount: result.clickCount,
         });
 

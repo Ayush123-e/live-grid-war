@@ -10,14 +10,20 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
 
   return (
     <>
-      {/* Toggle button */}
+      {/* Toggle button - positioned absolutely and slides relative to the sidebar open state */}
       <button
-        onClick={onToggle}
-        className="fixed top-4 right-4 z-50 w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-300"
+        onClick={(e) => {
+          e.stopPropagation()
+          onToggle()
+        }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+        className="absolute top-4 z-50 w-10 h-10 flex items-center justify-center rounded-xl transition-all duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] cursor-pointer pointer-events-auto"
         style={{
-          background: 'rgba(15,17,23,0.85)',
+          right: isOpen ? '348px' : '16px',
+          background: 'rgba(15, 23, 42, 0.7)',
           backdropFilter: 'blur(16px)',
-          border: '1px solid rgba(99,102,241,0.15)',
+          border: '1px solid rgba(30, 41, 59, 0.8)',
           color: '#8b8fa3',
           boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
         }}
@@ -40,15 +46,18 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
         </svg>
       </button>
 
-      {/* Sidebar panel */}
+      {/* Sidebar panel - Stretched vertically from top-4 to bottom-4 */}
       <aside
-        className="fixed top-0 right-0 h-full z-40 flex flex-col transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] backdrop-blur-md"
+        onMouseDown={(e) => e.stopPropagation()}
+        onWheel={(e) => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
+        className="absolute top-4 right-4 bottom-4 z-40 flex flex-col transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] backdrop-blur-md rounded-xl overflow-hidden pointer-events-auto"
         style={{
           width: '320px',
-          transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
-          background: 'rgba(15, 23, 42, 0.6)',
-          borderLeft: '1px solid rgba(30, 41, 59, 0.8)',
-          boxShadow: isOpen ? '-20px 0 60px rgba(0,0,0,0.4)' : 'none',
+          transform: isOpen ? 'translateX(0)' : 'translateX(calc(100% + 24px))',
+          background: 'rgba(15, 23, 42, 0.7)',
+          border: '1px solid rgba(30, 41, 59, 0.8)',
+          boxShadow: isOpen ? '-10px 10px 40px rgba(0,0,0,0.5)' : 'none',
         }}
       >
         {/* Header */}

@@ -8,6 +8,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { io } from 'socket.io-client'
+import { getInitials } from '../utils/initials'
 
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
 
@@ -28,11 +29,15 @@ export default function useSocket() {
 
   // ── Connect on mount ──
   useEffect(() => {
+    const saved = localStorage.getItem('live-grid-war:profile')
+    const authData = saved ? JSON.parse(saved) : null
+
     const socket = io(SERVER_URL, {
       transports: ['websocket', 'polling'],
       reconnection: true,
       reconnectionDelay: 1000,
       reconnectionAttempts: 10,
+      auth: authData ? { profile: authData } : {},
     })
     socketRef.current = socket
 
@@ -50,6 +55,7 @@ export default function useSocket() {
     // -- Profile assigned --
     socket.on('user:profile', (profile) => {
       setUserProfile(profile)
+      localStorage.setItem('live-grid-war:profile', JSON.stringify(profile))
     })
 
     // -- Leaderboard updates --
@@ -72,8 +78,9 @@ export default function useSocket() {
         const key = `${cell.x},${cell.y}`
         map.set(key, {
           color: cell.color,
-          label: cell.owner?.slice(-2)?.toUpperCase() || '?',
+          label: getInitials(cell.ownerName || cell.owner),
           owner: cell.owner,
+          ownerName: cell.ownerName || cell.owner,
         })
       }
       setClaimedCells(map)
@@ -94,8 +101,9 @@ export default function useSocket() {
         } else {
           next.set(key, {
             color: cell.color,
-            label: cell.owner?.slice(-2)?.toUpperCase() || '?',
+            label: getInitials(cell.ownerName || cell.owner),
             owner: cell.owner,
+            ownerName: cell.ownerName || cell.owner,
             optimistic: false,
           })
 
@@ -131,8 +139,9 @@ export default function useSocket() {
           if (data.currentCell) {
             next.set(key, {
               color: data.currentCell.color,
-              label: data.currentCell.owner?.slice(-2)?.toUpperCase() || '?',
+              label: getInitials(data.currentCell.ownerName || data.currentCell.owner),
               owner: data.currentCell.owner,
+              ownerName: data.currentCell.ownerName || data.currentCell.owner,
               optimistic: false,
             })
           } else {
@@ -198,8 +207,9 @@ export default function useSocket() {
             if (response.currentCell) {
               next.set(key, {
                 color: response.currentCell.color,
-                label: response.currentCell.owner?.slice(-2)?.toUpperCase() || '?',
+                label: getInitials(response.currentCell.ownerName || response.currentCell.owner),
                 owner: response.currentCell.owner,
+                ownerName: response.currentCell.ownerName || response.currentCell.owner,
                 optimistic: false,
               })
             } else {

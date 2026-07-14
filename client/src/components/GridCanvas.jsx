@@ -67,7 +67,6 @@ export default function GridCanvas({
   const lastCameraPos = useRef({ x: 0, y: 0 })
   const hoveredCell = useRef(null)
   const animFrameRef = useRef(null)
-  const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 })
 
   // Pulse animations (rendered purely on canvas, no React re-renders)
   const pulsesRef = useRef([])
@@ -99,37 +98,7 @@ export default function GridCanvas({
   const triggerPulseRef = useRef(triggerPulse)
   triggerPulseRef.current = triggerPulse
 
-  // Store triggerPulse callback on container element
-  useEffect(() => {
-    const container = containerRef.current
-    if (container) {
-      container.__triggerPulse = triggerPulse
-    }
-  }, [triggerPulse])
 
-  // ---------- resize observer ----------
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    const observer = new ResizeObserver((entries) => {
-      const { width, height } = entries[0].contentRect
-      setCanvasSize({ w: Math.floor(width), h: Math.floor(height) })
-    })
-    observer.observe(container)
-    return () => observer.disconnect()
-  }, [])
-
-  // center the grid initially
-  useEffect(() => {
-    if (canvasSize.w && canvasSize.h && !hasCentered.current) {
-      cameraRef.current.x = -(GRID_TOTAL / 2 - canvasSize.w / 2)
-      cameraRef.current.y = -(GRID_TOTAL / 2 - canvasSize.h / 2)
-      cameraRef.current.zoom = Math.min(canvasSize.w / GRID_TOTAL, canvasSize.h / GRID_TOTAL) * 0.9
-      hasCentered.current = true
-      draw()
-    }
-  }, [canvasSize])
 
   // ---------- drawing ----------
   const draw = useCallback(() => {
@@ -154,7 +123,23 @@ export default function GridCanvas({
     const startRow = Math.max(0, Math.floor(-camY / CELL_SIZE - 1))
     const endRow = Math.min(GRID_SIZE, Math.ceil((-camY + h / zoom) / CELL_SIZE + 1))
 
-    // draw cell backgrounds
+    // 1. Draw dynamic grid lines overlay first (underneath cell blocks)
+    ctx.strokeStyle = 'rgba(30, 41, 59, 0.3)'
+    ctx.lineWidth = 0.5
+    for (let col = startCol; col <= endCol; col++) {
+      ctx.beginPath()
+      ctx.moveTo(col * CELL_SIZE, startRow * CELL_SIZE)
+      ctx.lineTo(col * CELL_SIZE, endRow * CELL_SIZE)
+      ctx.stroke()
+    }
+    for (let row = startRow; row <= endRow; row++) {
+      ctx.beginPath()
+      ctx.moveTo(startCol * CELL_SIZE, row * CELL_SIZE)
+      ctx.lineTo(endCol * CELL_SIZE, row * CELL_SIZE)
+      ctx.stroke()
+    }
+
+    // 2. Draw claimed cells, highlights, and analytics on top of the grid lines
     for (let row = startRow; row < endRow; row++) {
       for (let col = startCol; col < endCol; col++) {
         const key = `${col},${row}`
@@ -169,10 +154,7 @@ export default function GridCanvas({
 
         if (heatmapMode) {
           const count = clickCounts?.get(key) || 0
-          if (count === 0) {
-            ctx.fillStyle = '#10121a'
-            ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
-          } else {
+          if (count > 0) {
             const ratio = Math.min(1, count / maxClicks)
             ctx.fillStyle = getHeatmapColor(ratio)
             ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
@@ -186,14 +168,43 @@ export default function GridCanvas({
           }
         } else {
           if (claimed) {
+            // Draw claimed block base
             ctx.fillStyle = claimed.color || '#6366f1'
             ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
 
-            // subtle inner glow for claimed cells
+            // Subtle inner glow for claimed cells
             ctx.shadowColor = claimed.color || '#6366f1'
             ctx.shadowBlur = 6
             ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
             ctx.shadowBlur = 0
+
+            // Draw user initials perfectly centered inside the cell
+            if (zoom > 0.35) {
+              // 1. Get the dynamic owner name safely from the cell object
+              const ownerName = claimed.ownerName || claimed.owner || "Anonymous";
+
+              // 2. Extract the first two letters properly
+              let displayInitials = "";
+              if (ownerName.includes('_')) {
+                // If username has an underscore like TurboFalcon_297 -> "TF"
+                const parts = ownerName.split('_');
+                displayInitials = (parts[0][0] + (parts[1] ? parts[1][0] : parts[0][1])).toUpperCase();
+              } else if (ownerName.includes(' ')) {
+                // If username has spaces -> take first letters of both words
+                const parts = ownerName.split(' ');
+                displayInitials = (parts[0][0] + (parts[1] ? parts[1][0] : parts[0][1])).toUpperCase();
+              } else {
+                // Fallback: Just take the first two letters of the name -> "TU"
+                displayInitials = ownerName.substring(0, 2).toUpperCase();
+              }
+
+              // 3. Now pass 'displayInitials' to ctx.fillText
+              ctx.fillStyle = '#ffffff';
+              ctx.font = 'bold 10px Inter, sans-serif';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'middle';
+              ctx.fillText(displayInitials, px + CELL_SIZE / 2, py + CELL_SIZE / 2);
+            }
 
             // optimistic indicator: show a brighter border for pending cells
             if (claimed.optimistic) {
@@ -204,51 +215,9 @@ export default function GridCanvas({
               ctx.setLineDash([])
             }
           } else if (isHovered && !cooldownActive) {
+            // Draw cursor hover cell
             ctx.fillStyle = '#2a2d3e'
             ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
-          } else {
-            ctx.fillStyle = '#14161f'
-            ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
-          }
-        }
-      }
-    }
-
-    // grid lines
-    ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)'
-    ctx.lineWidth = 0.5
-
-    for (let col = startCol; col <= endCol; col++) {
-      ctx.beginPath()
-      ctx.moveTo(col * CELL_SIZE, startRow * CELL_SIZE)
-      ctx.lineTo(col * CELL_SIZE, endRow * CELL_SIZE)
-      ctx.stroke()
-    }
-    for (let row = startRow; row <= endRow; row++) {
-      ctx.beginPath()
-      ctx.moveTo(startCol * CELL_SIZE, row * CELL_SIZE)
-      ctx.lineTo(endCol * CELL_SIZE, row * CELL_SIZE)
-      ctx.stroke()
-    }
-
-    // draw initials (disabled in heatmap mode for pure analytics presentation)
-    if (zoom > 0.35 && !heatmapMode) {
-      const fontSize = Math.max(8, Math.min(14, CELL_SIZE * 0.4))
-      ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-
-      for (let row = startRow; row < endRow; row++) {
-        for (let col = startCol; col < endCol; col++) {
-          const key = `${col},${row}`
-          const claimed = claimedCells?.get(key)
-          if (claimed?.label) {
-            ctx.fillStyle = 'rgba(255,255,255,0.85)'
-            ctx.fillText(
-              claimed.label,
-              col * CELL_SIZE + CELL_SIZE / 2,
-              row * CELL_SIZE + CELL_SIZE / 2
-            )
           }
         }
       }
@@ -338,6 +307,32 @@ export default function GridCanvas({
     }
   }, [claimedCells, clickCounts, maxClicks, cooldownActive, heatmapMode])
 
+  // ---------- resize and center listener ----------
+  useEffect(() => {
+    const canvas = canvasRef.current
+    if (!canvas) return
+
+    const handleResize = () => {
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = window.innerWidth * dpr
+      canvas.height = window.innerHeight * dpr
+      canvas.style.width = `${window.innerWidth}px`
+      canvas.style.height = `${window.innerHeight}px`
+      draw()
+    }
+
+    if (!hasCentered.current) {
+      cameraRef.current.zoom = 1.0
+      cameraRef.current.x = (window.innerWidth - (GRID_SIZE * CELL_SIZE)) / 2
+      cameraRef.current.y = (window.innerHeight - (GRID_SIZE * CELL_SIZE)) / 2
+      hasCentered.current = true
+    }
+
+    handleResize()
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [draw])
+
   // ---------- animation loop ----------
   useEffect(() => {
     let running = true
@@ -353,16 +348,7 @@ export default function GridCanvas({
     }
   }, [draw])
 
-  // ---------- set canvas resolution ----------
-  useEffect(() => {
-    const canvas = canvasRef.current
-    if (!canvas || !canvasSize.w) return
-    const dpr = window.devicePixelRatio || 1
-    canvas.width = canvasSize.w * dpr
-    canvas.height = canvasSize.h * dpr
-    canvas.style.width = `${canvasSize.w}px`
-    canvas.style.height = `${canvasSize.h}px`
-  }, [canvasSize])
+  // ---------- set canvas resolution (handled in resize hook) ----------
 
   // ---------- screen to grid coords ----------
   const screenToGrid = useCallback((clientX, clientY) => {
@@ -453,131 +439,25 @@ export default function GridCanvas({
     cam.y += worldYAfter - worldYBefore
   }, [])
 
-  // prevent default wheel on canvas container
+  // prevent default wheel on canvas
   useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
+    const canvas = canvasRef.current
+    if (!canvas) return
     const prevent = (e) => e.preventDefault()
-    container.addEventListener('wheel', prevent, { passive: false })
-    return () => container.removeEventListener('wheel', prevent)
+    canvas.addEventListener('wheel', prevent, { passive: false })
+    return () => canvas.removeEventListener('wheel', prevent)
   }, [])
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full overflow-hidden relative"
-      style={{ background: '#0b0d14' }}
-    >
-      <canvas
-        ref={canvasRef}
-        className="block"
-        style={{ cursor: cooldownActive ? 'not-allowed' : 'crosshair' }}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseLeave}
-        onWheel={handleWheel}
-      />
-
-      {/* Cooldown overlay */}
-      {cooldownActive && (
-        <div
-          className="absolute inset-0 flex items-center justify-center pointer-events-none"
-          style={{ zIndex: 10 }}
-        >
-          {/* Subtle dark vignette */}
-          <div
-            className="absolute inset-0"
-            style={{
-              background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.25) 100%)',
-            }}
-          />
-
-          {/* Cooldown badge */}
-          <div
-            className="relative flex flex-col items-center gap-3"
-            style={{
-              animation: 'cooldownFadeIn 0.3s ease-out',
-            }}
-          >
-            {/* Circular progress */}
-            <div className="relative w-20 h-20">
-              <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
-                {/* Track */}
-                <circle
-                  cx="40" cy="40" r="34"
-                  fill="none"
-                  stroke="rgba(99,102,241,0.1)"
-                  strokeWidth="4"
-                />
-                {/* Progress arc */}
-                <circle
-                  cx="40" cy="40" r="34"
-                  fill="none"
-                  stroke="url(#cooldownGrad)"
-                  strokeWidth="4"
-                  strokeLinecap="round"
-                  strokeDasharray={`${2 * Math.PI * 34}`}
-                  strokeDashoffset={`${2 * Math.PI * 34 * (1 - cooldownRemaining / 3)}`}
-                  style={{ transition: 'stroke-dashoffset 0.1s linear' }}
-                />
-                <defs>
-                  <linearGradient id="cooldownGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                    <stop offset="0%" stopColor="#6366f1" />
-                    <stop offset="100%" stopColor="#8b5cf6" />
-                  </linearGradient>
-                </defs>
-              </svg>
-
-              {/* Timer text */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span
-                  className="text-2xl font-bold tabular-nums"
-                  style={{
-                    color: '#e2e4ed',
-                    textShadow: '0 0 20px rgba(99,102,241,0.5)',
-                  }}
-                >
-                  {cooldownRemaining.toFixed(1)}
-                </span>
-              </div>
-            </div>
-
-            {/* Label */}
-            <div
-              className="px-4 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-widest"
-              style={{
-                background: 'rgba(99,102,241,0.12)',
-                color: '#8b8fa3',
-                backdropFilter: 'blur(8px)',
-                border: '1px solid rgba(99,102,241,0.1)',
-              }}
-            >
-              Cooldown
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Minimap / zoom indicator */}
-      <div className="absolute bottom-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium"
-        style={{
-          background: 'rgba(15,17,23,0.8)',
-          backdropFilter: 'blur(12px)',
-          border: '1px solid rgba(99,102,241,0.12)',
-          color: '#8b8fa3',
-        }}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8" />
-          <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          <line x1="11" y1="8" x2="11" y2="14" />
-          <line x1="8" y1="11" x2="14" y2="11" />
-        </svg>
-        <span>{Math.round(cameraRef.current.zoom * 100)}%</span>
-        <span className="mx-1" style={{ color: '#2a2d3a' }}>|</span>
-        <span>Scroll to zoom • Drag to pan</span>
-      </div>
-    </div>
+    <canvas
+      ref={canvasRef}
+      className="absolute inset-0 w-full h-full z-0 block bg-[#0b0f19]"
+      style={{ cursor: cooldownActive ? 'not-allowed' : 'crosshair' }}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+      onWheel={handleWheel}
+    />
   )
 }
