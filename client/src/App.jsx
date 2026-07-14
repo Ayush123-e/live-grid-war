@@ -118,29 +118,30 @@ function App() {
 
   return (
     <div className="w-screen h-screen overflow-hidden relative" style={{ background: '#0b0d14' }}>
-      {/* Grid Canvas fills the entire viewport */}
-      <GridCanvas
-        claimedCells={claimedCells}
-        clickCounts={clickCounts}
-        onCellClick={handleCellClick}
-        currentUser={userProfile?.username || 'U'}
-        cooldownActive={cooldownActive}
-        cooldownRemaining={cooldownRemaining}
-        heatmapMode={heatmapMode}
-      />
+      {/* Grid Canvas fills the entire viewport as a full-screen background */}
+      <div className="absolute inset-0 z-0">
+        <GridCanvas
+          claimedCells={claimedCells}
+          clickCounts={clickCounts}
+          onCellClick={handleCellClick}
+          currentUser={userProfile?.username || 'U'}
+          cooldownActive={cooldownActive}
+          cooldownRemaining={cooldownRemaining}
+          heatmapMode={heatmapMode}
+        />
+      </div>
 
-      {/* Control panel for toggling heatmap mode */}
-      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 p-1 rounded-full transition-all duration-300"
+      {/* Floating Control panel for toggling heatmap mode - positioned below branding */}
+      <div className="fixed top-[84px] left-4 z-50 flex items-center gap-2 p-1 rounded-xl backdrop-blur-md transition-all duration-300"
         style={{
-          background: 'rgba(12, 14, 20, 0.85)',
-          backdropFilter: 'blur(16px)',
-          border: '1px solid rgba(99, 102, 241, 0.15)',
-          boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+          background: 'rgba(15, 23, 42, 0.6)',
+          border: '1px solid rgba(30, 41, 59, 0.8)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
         }}
       >
         <button
           onClick={() => setHeatmapMode(!heatmapMode)}
-          className="flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold select-none transition-all duration-300 cursor-pointer"
+          className="flex items-center gap-2 px-4 py-1.5 rounded-lg text-xs font-semibold select-none transition-all duration-300 cursor-pointer"
           style={{
             background: heatmapMode ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'transparent',
             color: heatmapMode ? '#fff' : '#8b8fa3',
@@ -164,13 +165,12 @@ function App() {
         leaderboard={leaderboard}
       />
 
-      {/* Top-left branding */}
+      {/* Top-left branding floating widget */}
       <div
-        className="fixed top-4 left-4 z-50 flex items-center gap-3 px-4 py-2.5 rounded-xl"
+        className="fixed top-4 left-4 z-50 flex items-center gap-3 px-4 py-2.5 rounded-xl backdrop-blur-md"
         style={{
-          background: 'rgba(12,14,20,0.85)',
-          backdropFilter: 'blur(16px) saturate(1.4)',
-          border: '1px solid rgba(99,102,241,0.1)',
+          background: 'rgba(15, 23, 42, 0.6)',
+          border: '1px solid rgba(30, 41, 59, 0.8)',
           boxShadow: '0 4px 24px rgba(0,0,0,0.3)',
         }}
       >

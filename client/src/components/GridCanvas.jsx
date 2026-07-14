@@ -72,6 +72,8 @@ export default function GridCanvas({
   // Pulse animations (rendered purely on canvas, no React re-renders)
   const pulsesRef = useRef([])
 
+  const hasCentered = useRef(false)
+
   // Calculate highest click count for normalisation, baseline of 5
   const maxClicks = useMemo(() => {
     let max = 5
@@ -120,10 +122,11 @@ export default function GridCanvas({
 
   // center the grid initially
   useEffect(() => {
-    if (canvasSize.w && canvasSize.h) {
+    if (canvasSize.w && canvasSize.h && !hasCentered.current) {
       cameraRef.current.x = -(GRID_TOTAL / 2 - canvasSize.w / 2)
       cameraRef.current.y = -(GRID_TOTAL / 2 - canvasSize.h / 2)
       cameraRef.current.zoom = Math.min(canvasSize.w / GRID_TOTAL, canvasSize.h / GRID_TOTAL) * 0.9
+      hasCentered.current = true
       draw()
     }
   }, [canvasSize])
@@ -212,7 +215,7 @@ export default function GridCanvas({
     }
 
     // grid lines
-    ctx.strokeStyle = '#1e2030'
+    ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)'
     ctx.lineWidth = 0.5
 
     for (let col = startCol; col <= endCol; col++) {
@@ -301,14 +304,14 @@ export default function GridCanvas({
     if (hoveredCell.current && !cooldownActive) {
       const { x: hx, y: hy } = hoveredCell.current
       if (hx >= 0 && hx < GRID_SIZE && hy >= 0 && hy < GRID_SIZE) {
-        ctx.strokeStyle = '#6366f1'
-        ctx.lineWidth = 2
-        ctx.strokeRect(
-          hx * CELL_SIZE + 1,
-          hy * CELL_SIZE + 1,
-          CELL_SIZE - 2,
-          CELL_SIZE - 2
-        )
+        // Subtle low-opacity white/neon highlight box fill
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
+        ctx.fillRect(hx * CELL_SIZE + 0.5, hy * CELL_SIZE + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
+
+        // Subtle neon border
+        ctx.strokeStyle = 'rgba(99, 102, 241, 0.85)'
+        ctx.lineWidth = 1.5
+        ctx.strokeRect(hx * CELL_SIZE + 0.5, hy * CELL_SIZE + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
 
         // coordinate tooltip at zoom > 0.5
         if (zoom > 0.5) {

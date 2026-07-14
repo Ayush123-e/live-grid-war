@@ -42,13 +42,12 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
 
       {/* Sidebar panel */}
       <aside
-        className="fixed top-0 right-0 h-full z-40 flex flex-col transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]"
+        className="fixed top-0 right-0 h-full z-40 flex flex-col transition-transform duration-500 ease-[cubic-bezier(0.16,1,0.3,1)] backdrop-blur-md"
         style={{
           width: '320px',
           transform: isOpen ? 'translateX(0)' : 'translateX(100%)',
-          background: 'rgba(12,14,20,0.88)',
-          backdropFilter: 'blur(24px) saturate(1.4)',
-          borderLeft: '1px solid rgba(99,102,241,0.08)',
+          background: 'rgba(15, 23, 42, 0.6)',
+          borderLeft: '1px solid rgba(30, 41, 59, 0.8)',
           boxShadow: isOpen ? '-20px 0 60px rgba(0,0,0,0.4)' : 'none',
         }}
       >
@@ -322,16 +321,16 @@ function StatCard({ icon, label, value, color, pulse }) {
     <div
       className="p-3 rounded-xl transition-all duration-200"
       style={{
-        background: 'rgba(22,24,34,0.6)',
-        border: '1px solid rgba(99,102,241,0.06)',
+        background: 'rgba(15, 23, 42, 0.4)',
+        border: '1px solid rgba(30, 41, 59, 0.6)',
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.background = 'rgba(22,24,34,0.9)'
-        e.currentTarget.style.borderColor = `${color}22`
+        e.currentTarget.style.background = 'rgba(15, 23, 42, 0.7)'
+        e.currentTarget.style.borderColor = `${color}44`
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.background = 'rgba(22,24,34,0.6)'
-        e.currentTarget.style.borderColor = 'rgba(99,102,241,0.06)'
+        e.currentTarget.style.background = 'rgba(15, 23, 42, 0.4)'
+        e.currentTarget.style.borderColor = 'rgba(30, 41, 59, 0.6)'
       }}
     >
       <div className="flex items-center gap-1.5 mb-1.5" style={{ color: '#5c5f73' }}>
