@@ -179,7 +179,7 @@ export default function GridCanvas({
             ctx.shadowBlur = 0
 
             // Draw user initials perfectly centered inside the cell
-            if (zoom > 0.35) {
+            if (zoom >= 0.5) {
               // 1. Get the dynamic owner name safely from the cell object
               const ownerName = claimed.ownerName || claimed.owner || "Anonymous";
 

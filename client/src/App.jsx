@@ -258,6 +258,9 @@ function App() {
 
             {/* Glowing progress badge */}
             <div
+              onMouseDown={(e) => e.stopPropagation()}
+              onWheel={(e) => e.stopPropagation()}
+              onClick={(e) => e.stopPropagation()}
               className="relative flex flex-col items-center gap-3 pointer-events-auto"
               style={{
                 animation: 'cooldownFadeIn 0.3s ease-out',
