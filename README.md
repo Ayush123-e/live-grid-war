@@ -65,9 +65,12 @@ live-grid-war/
 │
 ├── server/                 # Node.js backend (Express + Socket.io)
 │   ├── src/
-│   │   ├── index.js             # HTTP setup & connection entrypoint
-│   │   ├── grid.js              # Sparse grid Map & state methods
-│   │   └── socketHandlers.js    # Identity generator, anti-cheat & game events
+│   │   ├── config/              # (Optional) Redis/Env configuration
+│   │   ├── handlers/
+│   │   │   └── socketHandlers.js # Identity generator, anti-cheat & game events
+│   │   ├── services/
+│   │   │   └── gridService.js   # Sparse grid Map & state methods
+│   │   └── index.js             # HTTP setup & connection entrypoint
 │   └── package.json
 │
 └── README.md               # Architecture documentation (this file)

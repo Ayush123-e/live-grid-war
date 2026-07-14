@@ -9,8 +9,8 @@ const express = require('express')
 const http = require('http')
 const { Server } = require('socket.io')
 const cors = require('cors')
-const GridStore = require('./grid')
-const registerSocketHandlers = require('./socketHandlers')
+const GridStore = require('./services/gridService')
+const registerSocketHandlers = require('./handlers/socketHandlers')
 
 // ---------------------------------------------------------------------------
 // Config
