@@ -41,7 +41,6 @@ export default function useSocket() {
     })
     socketRef.current = socket
 
-    // -- Connection state --
     socket.on('connect', () => {
       console.log('[WS] Connected:', socket.id)
       setConnected(true)
@@ -52,18 +51,15 @@ export default function useSocket() {
       setConnected(false)
     })
 
-    // -- Profile assigned --
     socket.on('user:profile', (profile) => {
       setUserProfile(profile)
       localStorage.setItem('live-grid-war:profile', JSON.stringify(profile))
     })
 
-    // -- Leaderboard updates --
     socket.on('leaderboard:update', (top5) => {
       setLeaderboard(top5)
     })
 
-    // -- Initial grid state --
     socket.on('grid:init', (data) => {
       console.log(`[WS] Grid init: ${data.cells.length} cells, ${data.onlineUsers} online`)
       setGridSize(data.gridSize)
@@ -72,7 +68,6 @@ export default function useSocket() {
         setLeaderboard(data.leaderboard)
       }
 
-      // Build the claimed cells Map
       const map = new Map()
       for (const cell of data.cells) {
         const key = `${cell.x},${cell.y}`
@@ -85,12 +80,10 @@ export default function useSocket() {
       }
       setClaimedCells(map)
 
-      // Build the click history Map
       const clicks = new Map(Object.entries(data.clickHistory || {}))
       setClickCounts(clicks)
     })
 
-    // -- Delta update: a single cell was claimed, unclaimed or clicked --
     socket.on('cell-updated', (cell) => {
       setClaimedCells((prev) => {
         const next = new Map(prev)
@@ -107,7 +100,6 @@ export default function useSocket() {
             optimistic: false,
           })
 
-          // Trigger pulse for claimed cells
           if (triggerPulseRef.current) {
             triggerPulseRef.current(cell.x, cell.y, cell.color)
           }
@@ -115,7 +107,6 @@ export default function useSocket() {
         return next
       })
 
-      // Update clickCounts Map for heatmap rendering
       if (cell.clickCount !== undefined) {
         setClickCounts((prev) => {
           const next = new Map(prev)
@@ -126,7 +117,6 @@ export default function useSocket() {
       }
     })
 
-    // -- Sync rollback: our optimistic claim was rejected --
     socket.on('sync-rollback', (data) => {
       console.log(`[WS] Rollback: (${data.x},${data.y}) — ${data.reason}`)
 
@@ -151,7 +141,6 @@ export default function useSocket() {
         return next
       })
 
-      // Update click counts if provided during rollback click
       if (data.clickCount !== undefined) {
         setClickCounts((prev) => {
           const next = new Map(prev)
@@ -162,7 +151,6 @@ export default function useSocket() {
       }
     })
 
-    // -- Cooldown error --
     socket.on('error-cooldown', (data) => {
       console.warn(`[WS] Cooldown: ${data.reason}`)
       if (data.cell) {
@@ -178,12 +166,10 @@ export default function useSocket() {
       }
     })
 
-    // -- Live user count --
     socket.on('user-count', (data) => {
       setOnlineUsers(data.onlineUsers)
     })
 
-    // Cleanup
     return () => {
       socket.removeAllListeners()
       socket.disconnect()
@@ -191,7 +177,6 @@ export default function useSocket() {
     }
   }, [])
 
-  // ── Claim a cell via socket ──
   const claimCell = useCallback((x, y) => {
     const socket = socketRef.current
     if (!socket?.connected) return

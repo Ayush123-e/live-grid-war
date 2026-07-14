@@ -23,19 +23,16 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [heatmapMode, setHeatmapMode] = useState(false)
 
-  // Cooldown state
   const [cooldownActive, setCooldownActive] = useState(false)
   const [cooldownRemaining, setCooldownRemaining] = useState(0)
   const cooldownTimerRef = useRef(null)
   const cooldownStartRef = useRef(0)
 
-  // Start cooldown countdown
   const startCooldown = useCallback(() => {
     setCooldownActive(true)
     setCooldownRemaining(COOLDOWN_DURATION)
     cooldownStartRef.current = performance.now()
 
-    // Clear any existing timer
     if (cooldownTimerRef.current) {
       cancelAnimationFrame(cooldownTimerRef.current)
     }
@@ -55,7 +52,6 @@ function App() {
     cooldownTimerRef.current = requestAnimationFrame(tick)
   }, [])
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (cooldownTimerRef.current) {
@@ -72,28 +68,22 @@ function App() {
       const existing = claimedCells.get(key)
       const currentSocketId = socket.current?.id
 
-      // Check ownership
       const isOwnCell = existing && existing.owner === currentSocketId
 
-      // Block clicking cells owned by others
       if (existing && !isOwnCell && !existing.optimistic) return
 
       if (isOwnCell) {
-        // Optimistic unclaim (toggling own cell off)
         setClaimedCells((prev) => {
           const next = new Map(prev)
           next.delete(key)
           return next
         })
-        // Emit claimCell to server which will toggle it off (unclaim)
         claimCell(x, y)
         return
       }
 
-      // Store the pulse trigger so socket events can fire it
       triggerPulseRef.current = triggerPulseFn
 
-      // --- Optimistic UI: instantly show the cell as claimed ---
       const color = userProfile?.color || '#6366f1'
       const label = getInitials(userProfile?.username)
 
@@ -109,10 +99,8 @@ function App() {
         return next
       })
 
-      // Start the cooldown immediately
       startCooldown()
 
-      // --- Emit to server ---
       claimCell(x, y)
     },
     [cooldownActive, claimedCells, startCooldown, claimCell, setClaimedCells, triggerPulseRef, userProfile, socket]

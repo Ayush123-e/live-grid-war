@@ -12,20 +12,13 @@ const cors = require('cors')
 const GridStore = require('./services/gridService')
 const registerSocketHandlers = require('./handlers/socketHandlers')
 
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
 const PORT = process.env.PORT || 3001
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:5173'
 
-// ---------------------------------------------------------------------------
-// Express app
-// ---------------------------------------------------------------------------
 const app = express()
 app.use(cors({ origin: CORS_ORIGIN }))
 app.use(express.json())
 
-// Health check endpoint
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
@@ -36,7 +29,6 @@ app.get('/health', (_req, res) => {
   })
 })
 
-// REST endpoint to fetch grid state (fallback if WebSocket fails)
 app.get('/api/grid', (_req, res) => {
   res.json({
     gridSize: grid.size,
@@ -44,45 +36,30 @@ app.get('/api/grid', (_req, res) => {
   })
 })
 
-// ---------------------------------------------------------------------------
-// HTTP + Socket.io server
-// ---------------------------------------------------------------------------
 const server = http.createServer(app)
 const io = new Server(server, {
   cors: {
     origin: CORS_ORIGIN,
     methods: ['GET', 'POST'],
   },
-  // Performance tuning
   pingInterval: 10000,
   pingTimeout: 5000,
-  maxHttpBufferSize: 1e4, // 10KB — small payloads only
+  maxHttpBufferSize: 1e4,
 })
 
-// ---------------------------------------------------------------------------
-// Shared state
-// ---------------------------------------------------------------------------
 const grid = new GridStore()
 const users = { count: 0 }
-const cooldowns = new Map() // socket.id → last claim timestamp
-const profiles = new Map()  // socket.id → { username, color }
+const cooldowns = new Map()
+const profiles = new Map()
 
-// ---------------------------------------------------------------------------
-// Socket.io connection handler
-// ---------------------------------------------------------------------------
 io.on('connection', (socket) => {
   users.count++
 
-  // Broadcast updated user count to everyone
   io.emit('user-count', { onlineUsers: users.count })
 
-  // Register all event handlers for this socket, passing the profiles map
   registerSocketHandlers(io, socket, grid, users, cooldowns, profiles)
 })
 
-// ---------------------------------------------------------------------------
-// Start server
-// ---------------------------------------------------------------------------
 server.listen(PORT, () => {
   console.log('')
   console.log('  ╔══════════════════════════════════════════╗')
@@ -96,9 +73,6 @@ server.listen(PORT, () => {
   console.log('')
 })
 
-// ---------------------------------------------------------------------------
-// Graceful shutdown
-// ---------------------------------------------------------------------------
 function shutdown(signal) {
   console.log(`\n[!] Received ${signal}, shutting down gracefully...`)
   io.close(() => {
@@ -107,7 +81,6 @@ function shutdown(signal) {
       process.exit(0)
     })
   })
-  // Force exit after 5s if graceful shutdown hangs
   setTimeout(() => process.exit(1), 5000)
 }
 

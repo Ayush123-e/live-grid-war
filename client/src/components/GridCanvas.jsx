@@ -56,7 +56,6 @@ export default function GridCanvas({
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
 
-  // Camera state (using refs for performance — no re-renders on pan/zoom)
   const cameraRef = useRef({
     x: 0,
     y: 0,
@@ -68,12 +67,10 @@ export default function GridCanvas({
   const hoveredCell = useRef(null)
   const animFrameRef = useRef(null)
 
-  // Pulse animations (rendered purely on canvas, no React re-renders)
   const pulsesRef = useRef([])
 
   const hasCentered = useRef(false)
 
-  // Calculate highest click count for normalisation, baseline of 5
   const maxClicks = useMemo(() => {
     let max = 5
     if (clickCounts) {
@@ -84,7 +81,6 @@ export default function GridCanvas({
     return max
   }, [clickCounts])
 
-  // Public method to trigger a pulse effect at grid coordinates
   const triggerPulse = useCallback((col, row, color) => {
     pulsesRef.current.push({
       col,
@@ -94,13 +90,9 @@ export default function GridCanvas({
     })
   }, [])
 
-  // Expose triggerPulse via ref
   const triggerPulseRef = useRef(triggerPulse)
   triggerPulseRef.current = triggerPulse
 
-
-
-  // ---------- drawing ----------
   const draw = useCallback(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -178,27 +170,20 @@ export default function GridCanvas({
             ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
             ctx.shadowBlur = 0
 
-            // Draw user initials perfectly centered inside the cell
             if (zoom >= 0.5) {
-              // 1. Get the dynamic owner name safely from the cell object
               const ownerName = claimed.ownerName || claimed.owner || "Anonymous";
 
-              // 2. Extract the first two letters properly
               let displayInitials = "";
               if (ownerName.includes('_')) {
-                // If username has an underscore like TurboFalcon_297 -> "TF"
                 const parts = ownerName.split('_');
                 displayInitials = (parts[0][0] + (parts[1] ? parts[1][0] : parts[0][1])).toUpperCase();
               } else if (ownerName.includes(' ')) {
-                // If username has spaces -> take first letters of both words
                 const parts = ownerName.split(' ');
                 displayInitials = (parts[0][0] + (parts[1] ? parts[1][0] : parts[0][1])).toUpperCase();
               } else {
-                // Fallback: Just take the first two letters of the name -> "TU"
                 displayInitials = ownerName.substring(0, 2).toUpperCase();
               }
 
-              // 3. Now pass 'displayInitials' to ctx.fillText
               ctx.fillStyle = '#ffffff';
               ctx.font = 'bold 10px Inter, sans-serif';
               ctx.textAlign = 'center';
@@ -206,7 +191,6 @@ export default function GridCanvas({
               ctx.fillText(displayInitials, px + CELL_SIZE / 2, py + CELL_SIZE / 2);
             }
 
-            // optimistic indicator: show a brighter border for pending cells
             if (claimed.optimistic) {
               ctx.strokeStyle = 'rgba(255,255,255,0.4)'
               ctx.lineWidth = 1.5
@@ -215,7 +199,6 @@ export default function GridCanvas({
               ctx.setLineDash([])
             }
           } else if (isHovered && !cooldownActive) {
-            // Draw cursor hover cell
             ctx.fillStyle = '#2a2d3e'
             ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
           }
@@ -223,7 +206,6 @@ export default function GridCanvas({
       }
     }
 
-    // ---------- pulse animations ----------
     const activePulses = []
     for (const pulse of pulsesRef.current) {
       const elapsed = now - pulse.startTime
@@ -256,7 +238,6 @@ export default function GridCanvas({
       ctx.arc(cx, cy, radius * 0.6, 0, Math.PI * 2)
       ctx.fill()
 
-      // bright center flash
       if (t < 0.3) {
         const flashOpacity = (1 - t / 0.3)
         ctx.globalAlpha = flashOpacity * 0.6
@@ -269,20 +250,16 @@ export default function GridCanvas({
     }
     pulsesRef.current = activePulses
 
-    // hover outline (only when not in cooldown)
     if (hoveredCell.current && !cooldownActive) {
       const { x: hx, y: hy } = hoveredCell.current
       if (hx >= 0 && hx < GRID_SIZE && hy >= 0 && hy < GRID_SIZE) {
-        // Subtle low-opacity white/neon highlight box fill
         ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
         ctx.fillRect(hx * CELL_SIZE + 0.5, hy * CELL_SIZE + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
 
-        // Subtle neon border
         ctx.strokeStyle = 'rgba(99, 102, 241, 0.85)'
         ctx.lineWidth = 1.5
         ctx.strokeRect(hx * CELL_SIZE + 0.5, hy * CELL_SIZE + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
 
-        // coordinate tooltip at zoom > 0.5
         if (zoom > 0.5) {
           const clicksText = heatmapMode ? ` | Clicks: ${clickCounts?.get(`${hx},${hy}`) || 0}` : ''
           const tooltipText = `(${hx}, ${hy})${clicksText}`
@@ -307,7 +284,6 @@ export default function GridCanvas({
     }
   }, [claimedCells, clickCounts, maxClicks, cooldownActive, heatmapMode])
 
-  // ---------- resize and center listener ----------
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
@@ -333,7 +309,6 @@ export default function GridCanvas({
     return () => window.removeEventListener('resize', handleResize)
   }, [draw])
 
-  // ---------- animation loop ----------
   useEffect(() => {
     let running = true
     const loop = () => {
@@ -348,9 +323,6 @@ export default function GridCanvas({
     }
   }, [draw])
 
-  // ---------- set canvas resolution (handled in resize hook) ----------
-
-  // ---------- screen to grid coords ----------
   const screenToGrid = useCallback((clientX, clientY) => {
     const canvas = canvasRef.current
     if (!canvas) return null
@@ -369,7 +341,6 @@ export default function GridCanvas({
     return null
   }, [])
 
-  // ---------- mouse handlers ----------
   const handleMouseDown = useCallback((e) => {
     isDragging.current = true
     dragStart.current = { x: e.clientX, y: e.clientY }
@@ -425,7 +396,6 @@ export default function GridCanvas({
     const cam = cameraRef.current
     const oldZoom = cam.zoom
 
-    // smooth zoom factor
     const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92
     cam.zoom = Math.max(0.1, Math.min(5, cam.zoom * zoomFactor))
 
@@ -439,7 +409,6 @@ export default function GridCanvas({
     cam.y += worldYAfter - worldYBefore
   }, [])
 
-  // prevent default wheel on canvas
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return

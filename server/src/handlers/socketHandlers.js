@@ -58,14 +58,12 @@ function broadcastLeaderboard(io, grid, profiles) {
     counts[id] = 0;
   }
 
-  // Count claimed cells owned by active sessions
   for (const cell of grid.cells.values()) {
     if (counts[cell.owner] !== undefined) {
       counts[cell.owner]++;
     }
   }
 
-  // Map to leaderboard objects
   const leaderboard = Array.from(profiles.entries()).map(([id, profile]) => ({
     id,
     name: profile.username,
@@ -74,7 +72,6 @@ function broadcastLeaderboard(io, grid, profiles) {
     online: true,
   }));
 
-  // Sort by cells count desc, then alphabetically by name
   leaderboard.sort((a, b) => b.cells - a.cells || a.name.localeCompare(b.name));
 
   const top5 = leaderboard.slice(0, 5);
@@ -92,7 +89,6 @@ function broadcastLeaderboard(io, grid, profiles) {
  * @param {Map<string, object>} profiles — per-socket profile tracker
  */
 function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
-  // Check if user has an existing persisted identity in handshake auth
   let profile = socket.handshake.auth?.profile;
 
   if (profile && profile.username && profile.color) {
@@ -110,19 +106,16 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
   }
 
   if (!profile) {
-    // Generate a unique identity
     profile = generateUniqueProfile(profiles);
   }
 
   profiles.set(socket.id, profile);
 
-  // Send profile to user immediately
   socket.emit('user:profile', {
     username: profile.username,
     color: profile.color,
   });
 
-  // Calculate current top 5 leaderboard
   const getLeaderboardState = () => {
     const counts = {};
     for (const id of profiles.keys()) counts[id] = 0;
@@ -141,7 +134,6 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
       .slice(0, 5);
   };
 
-  // Send full initial state including historical click counts and leaderboard
   socket.emit('grid:init', {
     gridSize: grid.size,
     cells: grid.getFullState().map(cell => {
@@ -160,10 +152,8 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
     `[+] Profile assigned: ${profile.username} (${profile.color}) for ${socket.id}`
   );
 
-  // Broadcast updated leaderboard to reflect new user joining
   broadcastLeaderboard(io, grid, profiles);
 
-  // --- Claim cell ---
   socket.on('claim-cell', (data, ack) => {
     const respond = typeof ack === 'function' ? ack : () => {};
 
@@ -173,7 +163,6 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
 
     const { x, y } = data;
 
-    // Rate limiting
     const lastClaim = cooldowns.get(socket.id) || 0
     const elapsed = Date.now() - lastClaim
 
@@ -194,7 +183,6 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
       });
     }
 
-    // Execute tryClaimCell using server-controlled color
     const userColor = profile.color;
     const result = grid.tryClaimCell(x, y, userColor, socket.id);
 
@@ -224,7 +212,6 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
           clickCount: result.clickCount,
         });
 
-        // Broadcast conflict click so other clients update heatmap clickCount
         const winnerProfile = profiles.get(winner.owner)
         io.emit('cell-updated', {
           x,
@@ -243,7 +230,6 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
       }
 
       case 'unclaimed': {
-        // Toggled own cell off
         respond({ success: true, cell: result.cell });
 
         io.emit('cell-updated', {
@@ -256,7 +242,6 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
       }
 
       case 'claimed': {
-        // Claimed a cell successfully
         cooldowns.set(socket.id, Date.now());
         respond({ success: true, cell: result.cell });
 
@@ -272,11 +257,9 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
     }
   });
 
-  // --- Disconnect ---
   socket.on('disconnect', (reason) => {
     users.count--;
 
-    // Release all claimed cells owned by the disconnected client
     const releasedCells = [];
     for (const [key, cell] of grid.cells.entries()) {
       if (cell.owner === socket.id) {
@@ -286,14 +269,11 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
       }
     }
 
-    // Remove trackers
     profiles.delete(socket.id);
     cooldowns.delete(socket.id);
 
-    // Broadcast updated user count
     io.emit('user-count', { onlineUsers: users.count });
 
-    // Broadcast released cells to clear them on the frontend grid canvas
     for (const cell of releasedCells) {
       const key = `${cell.x},${cell.y}`;
       io.emit('cell-updated', {
@@ -305,7 +285,6 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
       });
     }
 
-    // Broadcast updated leaderboard
     broadcastLeaderboard(io, grid, profiles);
 
     console.log(
