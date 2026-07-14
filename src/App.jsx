@@ -1,45 +1,23 @@
 import { useState, useCallback, useRef, useEffect } from 'react'
 import GridCanvas from './components/GridCanvas'
 import Sidebar from './components/Sidebar'
+import useSocket from './hooks/useSocket'
 
 // Color palette for users
 const COLORS = ['#6366f1', '#f43f5e', '#22c55e', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899']
 
 const COOLDOWN_DURATION = 3 // seconds
 
-// Simulates a backend call — resolves after a short delay
-function simulateBackendClaim(x, y) {
-  return new Promise((resolve) => {
-    setTimeout(() => {
-      // 90% chance of success
-      resolve({ success: Math.random() > 0.1, x, y })
-    }, 400 + Math.random() * 300)
-  })
-}
-
 function App() {
-  const [claimedCells, setClaimedCells] = useState(() => {
-    // seed some demo cells
-    const map = new Map()
-    const demoData = [
-      { x: 48, y: 48, color: '#6366f1', label: 'A' },
-      { x: 49, y: 48, color: '#6366f1', label: 'A' },
-      { x: 50, y: 48, color: '#f43f5e', label: 'P' },
-      { x: 48, y: 49, color: '#22c55e', label: 'R' },
-      { x: 49, y: 49, color: '#6366f1', label: 'A' },
-      { x: 50, y: 49, color: '#f43f5e', label: 'P' },
-      { x: 51, y: 49, color: '#f59e0b', label: 'S' },
-      { x: 48, y: 50, color: '#22c55e', label: 'R' },
-      { x: 49, y: 50, color: '#22c55e', label: 'R' },
-      { x: 50, y: 50, color: '#06b6d4', label: 'V' },
-      { x: 51, y: 50, color: '#f59e0b', label: 'S' },
-      { x: 51, y: 48, color: '#06b6d4', label: 'V' },
-    ]
-    demoData.forEach(({ x, y, color, label }) => {
-      map.set(`${x},${y}`, { color, label })
-    })
-    return map
-  })
+  // ── Socket connection (replaces all mock/simulated state) ──
+  const {
+    connected,
+    onlineUsers,
+    claimedCells,
+    setClaimedCells,
+    claimCell,
+    triggerPulseRef,
+  } = useSocket()
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
@@ -85,21 +63,17 @@ function App() {
   }, [])
 
   const handleCellClick = useCallback(
-    (x, y, triggerPulse) => {
+    (x, y, triggerPulseFn) => {
       if (cooldownActive) return
 
       const key = `${x},${y}`
-      const alreadyClaimed = claimedCells.has(key)
+      const existing = claimedCells.get(key)
 
-      if (alreadyClaimed) {
-        // Just unclaim — no cooldown for unclaiming
-        setClaimedCells((prev) => {
-          const next = new Map(prev)
-          next.delete(key)
-          return next
-        })
-        return
-      }
+      // Don't allow clicking already-claimed cells
+      if (existing && !existing.optimistic) return
+
+      // Store the pulse trigger so socket events can fire it
+      triggerPulseRef.current = triggerPulseFn
 
       // --- Optimistic UI: instantly show the cell as claimed ---
       const color = COLORS[Math.floor(Math.random() * COLORS.length)]
@@ -112,41 +86,14 @@ function App() {
       // Start the cooldown immediately
       startCooldown()
 
-      // --- Simulate backend call ---
-      simulateBackendClaim(x, y).then(({ success }) => {
-        if (success) {
-          // Confirm: remove optimistic flag, trigger pulse
-          setClaimedCells((prev) => {
-            const next = new Map(prev)
-            const cell = next.get(key)
-            if (cell && cell.optimistic) {
-              next.set(key, { ...cell, optimistic: false })
-            }
-            return next
-          })
-
-          // Fire the neon pulse animation
-          if (triggerPulse) {
-            triggerPulse(x, y, color)
-          }
-        } else {
-          // Rollback: remove the optimistic cell
-          setClaimedCells((prev) => {
-            const next = new Map(prev)
-            const cell = next.get(key)
-            if (cell && cell.optimistic) {
-              next.delete(key)
-            }
-            return next
-          })
-        }
-      })
+      // --- Emit to server (rollback handled by useSocket on failure) ---
+      claimCell(x, y, color)
     },
-    [cooldownActive, claimedCells, startCooldown]
+    [cooldownActive, claimedCells, startCooldown, claimCell, setClaimedCells, triggerPulseRef]
   )
 
   const stats = {
-    onlineUsers: 3,
+    onlineUsers,
     cellsClaimed: claimedCells.size,
   }
 
@@ -166,6 +113,7 @@ function App() {
         stats={stats}
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
+        connected={connected}
       />
 
       {/* Top-left branding */}
@@ -201,10 +149,13 @@ function App() {
           </p>
         </div>
         <div
-          className="ml-2 w-1.5 h-1.5 rounded-full animate-pulse"
+          className="ml-2 w-1.5 h-1.5 rounded-full"
           style={{
-            background: '#22c55e',
-            boxShadow: '0 0 8px rgba(34,197,94,0.6)',
+            background: connected ? '#22c55e' : '#ef4444',
+            boxShadow: connected
+              ? '0 0 8px rgba(34,197,94,0.6)'
+              : '0 0 8px rgba(239,68,68,0.6)',
+            animation: connected ? 'pulse 2s infinite' : 'none',
           }}
         />
       </div>

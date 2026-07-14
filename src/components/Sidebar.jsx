@@ -8,7 +8,7 @@ const MOCK_USERS = [
   { id: 5, name: 'Vikram P.', color: '#06b6d4', cells: 15, online: false },
 ]
 
-export default function Sidebar({ stats, isOpen, onToggle }) {
+export default function Sidebar({ stats, isOpen, onToggle, connected }) {
   const [time, setTime] = useState(new Date())
 
   useEffect(() => {
@@ -242,16 +242,21 @@ export default function Sidebar({ stats, isOpen, onToggle }) {
           <div
             className="flex items-center justify-center gap-2 py-2 rounded-lg text-xs font-medium transition-all duration-200"
             style={{
-              background: 'rgba(99,102,241,0.06)',
-              color: '#6366f1',
-              border: '1px solid rgba(99,102,241,0.1)',
+              background: connected ? 'rgba(99,102,241,0.06)' : 'rgba(239,68,68,0.06)',
+              color: connected ? '#6366f1' : '#ef4444',
+              border: `1px solid ${connected ? 'rgba(99,102,241,0.1)' : 'rgba(239,68,68,0.1)'}`,
             }}
           >
             <div
-              className="w-1.5 h-1.5 rounded-full animate-pulse"
-              style={{ background: '#22c55e', boxShadow: '0 0 6px rgba(34,197,94,0.5)' }}
+              className={`w-1.5 h-1.5 rounded-full ${connected ? 'animate-pulse' : ''}`}
+              style={{
+                background: connected ? '#22c55e' : '#ef4444',
+                boxShadow: connected
+                  ? '0 0 6px rgba(34,197,94,0.5)'
+                  : '0 0 6px rgba(239,68,68,0.5)',
+              }}
             />
-            Connected to server
+            {connected ? 'Connected to server' : 'Disconnected'}
           </div>
         </div>
       </aside>
