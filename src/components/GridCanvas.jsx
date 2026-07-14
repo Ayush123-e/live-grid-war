@@ -4,7 +4,11 @@ const GRID_SIZE = 100
 const CELL_SIZE = 32
 const GRID_TOTAL = GRID_SIZE * CELL_SIZE // 3200px
 
-export default function GridCanvas({ claimedCells, onCellClick, currentUser }) {
+// Pulse animation config
+const PULSE_DURATION = 900 // ms
+const PULSE_MAX_RADIUS = CELL_SIZE * 1.8
+
+export default function GridCanvas({ claimedCells, onCellClick, currentUser, cooldownActive, cooldownRemaining }) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
 
@@ -20,6 +24,31 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser }) {
   const hoveredCell = useRef(null)
   const animFrameRef = useRef(null)
   const [canvasSize, setCanvasSize] = useState({ w: 0, h: 0 })
+
+  // Pulse animations (rendered purely on canvas, no React re-renders)
+  const pulsesRef = useRef([])
+
+  // Public method to trigger a pulse effect at grid coordinates
+  const triggerPulse = useCallback((col, row, color) => {
+    pulsesRef.current.push({
+      col,
+      row,
+      color,
+      startTime: performance.now(),
+    })
+  }, [])
+
+  // Expose triggerPulse via a ref-based callback so App can call it
+  const triggerPulseRef = useRef(triggerPulse)
+  triggerPulseRef.current = triggerPulse
+
+  // Store the triggerPulse function on the container element so parent can access it
+  useEffect(() => {
+    const container = containerRef.current
+    if (container) {
+      container.__triggerPulse = triggerPulse
+    }
+  }, [triggerPulse])
 
   // ---------- resize observer ----------
   useEffect(() => {
@@ -53,6 +82,7 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser }) {
     const { zoom, x: camX, y: camY } = cameraRef.current
     const w = canvas.width / dpr
     const h = canvas.height / dpr
+    const now = performance.now()
 
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
@@ -88,7 +118,16 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser }) {
           ctx.shadowBlur = 6
           ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
           ctx.shadowBlur = 0
-        } else if (isHovered) {
+
+          // optimistic indicator: show a brighter border for pending cells
+          if (claimed.optimistic) {
+            ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+            ctx.lineWidth = 1.5
+            ctx.setLineDash([3, 3])
+            ctx.strokeRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2)
+            ctx.setLineDash([])
+          }
+        } else if (isHovered && !cooldownActive) {
           ctx.fillStyle = '#2a2d3e'
           ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
         } else {
@@ -138,8 +177,54 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser }) {
       }
     }
 
-    // hover outline
-    if (hoveredCell.current) {
+    // ---------- pulse animations ----------
+    const activePulses = []
+    for (const pulse of pulsesRef.current) {
+      const elapsed = now - pulse.startTime
+      if (elapsed >= PULSE_DURATION) continue
+      activePulses.push(pulse)
+
+      const t = elapsed / PULSE_DURATION
+      const eased = 1 - Math.pow(1 - t, 3) // ease-out cubic
+      const radius = PULSE_MAX_RADIUS * eased
+      const opacity = 1 - eased
+
+      const cx = pulse.col * CELL_SIZE + CELL_SIZE / 2
+      const cy = pulse.row * CELL_SIZE + CELL_SIZE / 2
+
+      // outer glow ring
+      ctx.beginPath()
+      ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+      ctx.strokeStyle = pulse.color
+      ctx.lineWidth = 2.5 * (1 - t)
+      ctx.globalAlpha = opacity * 0.7
+      ctx.stroke()
+      ctx.globalAlpha = 1
+
+      // inner radial glow
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 0.6)
+      grad.addColorStop(0, `${pulse.color}${Math.round(opacity * 40).toString(16).padStart(2, '0')}`)
+      grad.addColorStop(1, `${pulse.color}00`)
+      ctx.fillStyle = grad
+      ctx.beginPath()
+      ctx.arc(cx, cy, radius * 0.6, 0, Math.PI * 2)
+      ctx.fill()
+
+      // bright center flash (quick fade)
+      if (t < 0.3) {
+        const flashOpacity = (1 - t / 0.3)
+        ctx.globalAlpha = flashOpacity * 0.6
+        ctx.fillStyle = '#ffffff'
+        ctx.beginPath()
+        ctx.arc(cx, cy, CELL_SIZE * 0.35 * (1 - t), 0, Math.PI * 2)
+        ctx.fill()
+        ctx.globalAlpha = 1
+      }
+    }
+    pulsesRef.current = activePulses
+
+    // hover outline (only when not in cooldown)
+    if (hoveredCell.current && !cooldownActive) {
       const { x: hx, y: hy } = hoveredCell.current
       if (hx >= 0 && hx < GRID_SIZE && hy >= 0 && hy < GRID_SIZE) {
         ctx.strokeStyle = '#6366f1'
@@ -173,7 +258,7 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser }) {
         }
       }
     }
-  }, [claimedCells])
+  }, [claimedCells, cooldownActive])
 
   // ---------- animation loop ----------
   useEffect(() => {
@@ -247,16 +332,16 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser }) {
         Math.abs(e.clientY - dragStart.current.y) > 3
 
       isDragging.current = false
-      e.currentTarget.style.cursor = 'crosshair'
+      e.currentTarget.style.cursor = cooldownActive ? 'not-allowed' : 'crosshair'
 
-      if (!wasDrag) {
+      if (!wasDrag && !cooldownActive) {
         const cell = screenToGrid(e.clientX, e.clientY)
         if (cell && onCellClick) {
-          onCellClick(cell.x, cell.y)
+          onCellClick(cell.x, cell.y, triggerPulseRef.current)
         }
       }
     },
-    [screenToGrid, onCellClick]
+    [screenToGrid, onCellClick, cooldownActive]
   )
 
   const handleMouseLeave = useCallback(() => {
@@ -299,6 +384,9 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser }) {
     return () => container.removeEventListener('wheel', prevent)
   }, [])
 
+  // Compute cursor style
+  const cursorStyle = cooldownActive ? 'not-allowed' : 'crosshair'
+
   return (
     <div
       ref={containerRef}
@@ -308,13 +396,93 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser }) {
       <canvas
         ref={canvasRef}
         className="block"
-        style={{ cursor: 'crosshair' }}
+        style={{ cursor: cursorStyle }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
         onWheel={handleWheel}
       />
+
+      {/* Cooldown overlay */}
+      {cooldownActive && (
+        <div
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          style={{ zIndex: 10 }}
+        >
+          {/* Subtle dark vignette */}
+          <div
+            className="absolute inset-0"
+            style={{
+              background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.25) 100%)',
+            }}
+          />
+
+          {/* Cooldown badge */}
+          <div
+            className="relative flex flex-col items-center gap-3"
+            style={{
+              animation: 'cooldownFadeIn 0.3s ease-out',
+            }}
+          >
+            {/* Circular progress */}
+            <div className="relative w-20 h-20">
+              <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
+                {/* Track */}
+                <circle
+                  cx="40" cy="40" r="34"
+                  fill="none"
+                  stroke="rgba(99,102,241,0.1)"
+                  strokeWidth="4"
+                />
+                {/* Progress arc */}
+                <circle
+                  cx="40" cy="40" r="34"
+                  fill="none"
+                  stroke="url(#cooldownGrad)"
+                  strokeWidth="4"
+                  strokeLinecap="round"
+                  strokeDasharray={`${2 * Math.PI * 34}`}
+                  strokeDashoffset={`${2 * Math.PI * 34 * (1 - cooldownRemaining / 3)}`}
+                  style={{ transition: 'stroke-dashoffset 0.1s linear' }}
+                />
+                <defs>
+                  <linearGradient id="cooldownGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#6366f1" />
+                    <stop offset="100%" stopColor="#8b5cf6" />
+                  </linearGradient>
+                </defs>
+              </svg>
+
+              {/* Timer text */}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span
+                  className="text-2xl font-bold tabular-nums"
+                  style={{
+                    color: '#e2e4ed',
+                    textShadow: '0 0 20px rgba(99,102,241,0.5)',
+                  }}
+                >
+                  {cooldownRemaining.toFixed(1)}
+                </span>
+              </div>
+            </div>
+
+            {/* Label */}
+            <div
+              className="px-4 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-widest"
+              style={{
+                background: 'rgba(99,102,241,0.12)',
+                color: '#8b8fa3',
+                backdropFilter: 'blur(8px)',
+                border: '1px solid rgba(99,102,241,0.1)',
+              }}
+            >
+              Cooldown
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Minimap / zoom indicator */}
       <div className="absolute bottom-4 left-4 flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium"

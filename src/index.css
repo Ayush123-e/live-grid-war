@@ -19,3 +19,23 @@
   --color-online: #22c55e;
   --color-danger: #ef4444;
 }
+
+/* Reset body for fullscreen canvas */
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #0b0d14;
+}
+
+/* Cooldown overlay animations */
+@keyframes cooldownFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}

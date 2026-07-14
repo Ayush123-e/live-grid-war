@@ -1,9 +1,21 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import GridCanvas from './components/GridCanvas'
 import Sidebar from './components/Sidebar'
 
 // Color palette for users
 const COLORS = ['#6366f1', '#f43f5e', '#22c55e', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899']
+
+const COOLDOWN_DURATION = 3 // seconds
+
+// Simulates a backend call — resolves after a short delay
+function simulateBackendClaim(x, y) {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      // 90% chance of success
+      resolve({ success: Math.random() > 0.1, x, y })
+    }, 400 + Math.random() * 300)
+  })
+}
 
 function App() {
   const [claimedCells, setClaimedCells] = useState(() => {
@@ -31,23 +43,106 @@ function App() {
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
 
+  // Cooldown state
+  const [cooldownActive, setCooldownActive] = useState(false)
+  const [cooldownRemaining, setCooldownRemaining] = useState(0)
+  const cooldownTimerRef = useRef(null)
+  const cooldownStartRef = useRef(0)
+
+  // Start cooldown countdown
+  const startCooldown = useCallback(() => {
+    setCooldownActive(true)
+    setCooldownRemaining(COOLDOWN_DURATION)
+    cooldownStartRef.current = performance.now()
+
+    // Clear any existing timer
+    if (cooldownTimerRef.current) {
+      cancelAnimationFrame(cooldownTimerRef.current)
+    }
+
+    const tick = () => {
+      const elapsed = (performance.now() - cooldownStartRef.current) / 1000
+      const remaining = Math.max(0, COOLDOWN_DURATION - elapsed)
+      setCooldownRemaining(remaining)
+
+      if (remaining > 0) {
+        cooldownTimerRef.current = requestAnimationFrame(tick)
+      } else {
+        setCooldownActive(false)
+        setCooldownRemaining(0)
+      }
+    }
+    cooldownTimerRef.current = requestAnimationFrame(tick)
+  }, [])
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (cooldownTimerRef.current) {
+        cancelAnimationFrame(cooldownTimerRef.current)
+      }
+    }
+  }, [])
+
   const handleCellClick = useCallback(
-    (x, y) => {
+    (x, y, triggerPulse) => {
+      if (cooldownActive) return
+
       const key = `${x},${y}`
+      const alreadyClaimed = claimedCells.has(key)
+
+      if (alreadyClaimed) {
+        // Just unclaim — no cooldown for unclaiming
+        setClaimedCells((prev) => {
+          const next = new Map(prev)
+          next.delete(key)
+          return next
+        })
+        return
+      }
+
+      // --- Optimistic UI: instantly show the cell as claimed ---
+      const color = COLORS[Math.floor(Math.random() * COLORS.length)]
       setClaimedCells((prev) => {
         const next = new Map(prev)
-        if (next.has(key)) {
-          // unclaim
-          next.delete(key)
-        } else {
-          // claim with random color
-          const color = COLORS[Math.floor(Math.random() * COLORS.length)]
-          next.set(key, { color, label: 'U' })
-        }
+        next.set(key, { color, label: 'U', optimistic: true })
         return next
       })
+
+      // Start the cooldown immediately
+      startCooldown()
+
+      // --- Simulate backend call ---
+      simulateBackendClaim(x, y).then(({ success }) => {
+        if (success) {
+          // Confirm: remove optimistic flag, trigger pulse
+          setClaimedCells((prev) => {
+            const next = new Map(prev)
+            const cell = next.get(key)
+            if (cell && cell.optimistic) {
+              next.set(key, { ...cell, optimistic: false })
+            }
+            return next
+          })
+
+          // Fire the neon pulse animation
+          if (triggerPulse) {
+            triggerPulse(x, y, color)
+          }
+        } else {
+          // Rollback: remove the optimistic cell
+          setClaimedCells((prev) => {
+            const next = new Map(prev)
+            const cell = next.get(key)
+            if (cell && cell.optimistic) {
+              next.delete(key)
+            }
+            return next
+          })
+        }
+      })
     },
-    []
+    [cooldownActive, claimedCells, startCooldown]
   )
 
   const stats = {
@@ -62,6 +157,8 @@ function App() {
         claimedCells={claimedCells}
         onCellClick={handleCellClick}
         currentUser="U"
+        cooldownActive={cooldownActive}
+        cooldownRemaining={cooldownRemaining}
       />
 
       {/* Floating Sidebar */}
