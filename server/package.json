@@ -1,0 +1,21 @@
+{
+  "name": "live-grid-war-server",
+  "version": "1.0.0",
+  "description": "Real-time shared grid backend — Express + Socket.io",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js"
+  },
+  "keywords": [
+    "grid",
+    "realtime",
+    "socket.io"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "socket.io": "^4.8.3"
+  }
+}
