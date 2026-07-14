@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react'
+import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 
 const GRID_SIZE = 100
 const CELL_SIZE = 32
@@ -8,7 +8,51 @@ const GRID_TOTAL = GRID_SIZE * CELL_SIZE // 3200px
 const PULSE_DURATION = 900 // ms
 const PULSE_MAX_RADIUS = CELL_SIZE * 1.8
 
-export default function GridCanvas({ claimedCells, onCellClick, currentUser, cooldownActive, cooldownRemaining }) {
+/**
+ * Perform smooth linear interpolation between colors to generate thermal gradient.
+ * @param {number} ratio — normalized click value [0.0 - 1.0]
+ * @returns {string} — rgb color string
+ */
+function getHeatmapColor(ratio) {
+  // 0.00 -> #10121a (very dark navy)
+  // 0.25 -> #4c1d95 (rich purple)
+  // 0.50 -> #b91c1c (deep red)
+  // 0.75 -> #ea580c (neon orange)
+  // 1.00 -> #ffffff (bright white)
+  let r, g, b;
+  if (ratio < 0.25) {
+    const t = ratio / 0.25;
+    r = Math.round(16 + t * (76 - 16));
+    g = Math.round(18 + t * (29 - 18));
+    b = Math.round(26 + t * (149 - 26));
+  } else if (ratio < 0.5) {
+    const t = (ratio - 0.25) / 0.25;
+    r = Math.round(76 + t * (185 - 76));
+    g = Math.round(29 + t * (28 - 29));
+    b = Math.round(149 + t * (28 - 149));
+  } else if (ratio < 0.75) {
+    const t = (ratio - 0.5) / 0.25;
+    r = Math.round(185 + t * (234 - 185));
+    g = Math.round(28 + t * (88 - 28));
+    b = Math.round(28 + t * (12 - 28));
+  } else {
+    const t = (ratio - 0.75) / 0.25;
+    r = Math.round(234 + t * (255 - 234));
+    g = Math.round(88 + t * (255 - 88));
+    b = Math.round(12 + t * (255 - 12));
+  }
+  return `rgb(${r},${g},${b})`;
+}
+
+export default function GridCanvas({
+  claimedCells,
+  clickCounts,
+  onCellClick,
+  currentUser,
+  cooldownActive,
+  cooldownRemaining,
+  heatmapMode
+}) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
 
@@ -28,6 +72,17 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser, coo
   // Pulse animations (rendered purely on canvas, no React re-renders)
   const pulsesRef = useRef([])
 
+  // Calculate highest click count for normalisation, baseline of 5
+  const maxClicks = useMemo(() => {
+    let max = 5
+    if (clickCounts) {
+      for (const count of clickCounts.values()) {
+        if (count > max) max = count
+      }
+    }
+    return max
+  }, [clickCounts])
+
   // Public method to trigger a pulse effect at grid coordinates
   const triggerPulse = useCallback((col, row, color) => {
     pulsesRef.current.push({
@@ -38,11 +93,11 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser, coo
     })
   }, [])
 
-  // Expose triggerPulse via a ref-based callback so App can call it
+  // Expose triggerPulse via ref
   const triggerPulseRef = useRef(triggerPulse)
   triggerPulseRef.current = triggerPulse
 
-  // Store the triggerPulse function on the container element so parent can access it
+  // Store triggerPulse callback on container element
   useEffect(() => {
     const container = containerRef.current
     if (container) {
@@ -109,30 +164,49 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser, coo
         const px = col * CELL_SIZE
         const py = row * CELL_SIZE
 
-        if (claimed) {
-          ctx.fillStyle = claimed.color || '#6366f1'
-          ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
+        if (heatmapMode) {
+          const count = clickCounts?.get(key) || 0
+          if (count === 0) {
+            ctx.fillStyle = '#10121a'
+            ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
+          } else {
+            const ratio = Math.min(1, count / maxClicks)
+            ctx.fillStyle = getHeatmapColor(ratio)
+            ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
 
-          // subtle inner glow for claimed cells
-          ctx.shadowColor = claimed.color || '#6366f1'
-          ctx.shadowBlur = 6
-          ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
-          ctx.shadowBlur = 0
-
-          // optimistic indicator: show a brighter border for pending cells
-          if (claimed.optimistic) {
-            ctx.strokeStyle = 'rgba(255,255,255,0.4)'
-            ctx.lineWidth = 1.5
-            ctx.setLineDash([3, 3])
-            ctx.strokeRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2)
-            ctx.setLineDash([])
+            // draw subtle layout borders for claimed cells in heatmap
+            if (claimed) {
+              ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)'
+              ctx.lineWidth = 0.5
+              ctx.strokeRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
+            }
           }
-        } else if (isHovered && !cooldownActive) {
-          ctx.fillStyle = '#2a2d3e'
-          ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
         } else {
-          ctx.fillStyle = '#14161f'
-          ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
+          if (claimed) {
+            ctx.fillStyle = claimed.color || '#6366f1'
+            ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
+
+            // subtle inner glow for claimed cells
+            ctx.shadowColor = claimed.color || '#6366f1'
+            ctx.shadowBlur = 6
+            ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
+            ctx.shadowBlur = 0
+
+            // optimistic indicator: show a brighter border for pending cells
+            if (claimed.optimistic) {
+              ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+              ctx.lineWidth = 1.5
+              ctx.setLineDash([3, 3])
+              ctx.strokeRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2)
+              ctx.setLineDash([])
+            }
+          } else if (isHovered && !cooldownActive) {
+            ctx.fillStyle = '#2a2d3e'
+            ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
+          } else {
+            ctx.fillStyle = '#14161f'
+            ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
+          }
         }
       }
     }
@@ -154,8 +228,8 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser, coo
       ctx.stroke()
     }
 
-    // draw user initials on claimed cells (only when zoomed in enough)
-    if (zoom > 0.35) {
+    // draw initials (disabled in heatmap mode for pure analytics presentation)
+    if (zoom > 0.35 && !heatmapMode) {
       const fontSize = Math.max(8, Math.min(14, CELL_SIZE * 0.4))
       ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`
       ctx.textAlign = 'center'
@@ -210,7 +284,7 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser, coo
       ctx.arc(cx, cy, radius * 0.6, 0, Math.PI * 2)
       ctx.fill()
 
-      // bright center flash (quick fade)
+      // bright center flash
       if (t < 0.3) {
         const flashOpacity = (1 - t / 0.3)
         ctx.globalAlpha = flashOpacity * 0.6
@@ -238,7 +312,8 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser, coo
 
         // coordinate tooltip at zoom > 0.5
         if (zoom > 0.5) {
-          const tooltipText = `(${hx}, ${hy})`
+          const clicksText = heatmapMode ? ` | Clicks: ${clickCounts?.get(`${hx},${hy}`) || 0}` : ''
+          const tooltipText = `(${hx}, ${hy})${clicksText}`
           ctx.font = '500 10px Inter, system-ui, sans-serif'
           const metrics = ctx.measureText(tooltipText)
           const tw = metrics.width + 10
@@ -258,7 +333,7 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser, coo
         }
       }
     }
-  }, [claimedCells, cooldownActive])
+  }, [claimedCells, clickCounts, maxClicks, cooldownActive, heatmapMode])
 
   // ---------- animation loop ----------
   useEffect(() => {
@@ -384,9 +459,6 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser, coo
     return () => container.removeEventListener('wheel', prevent)
   }, [])
 
-  // Compute cursor style
-  const cursorStyle = cooldownActive ? 'not-allowed' : 'crosshair'
-
   return (
     <div
       ref={containerRef}
@@ -396,7 +468,7 @@ export default function GridCanvas({ claimedCells, onCellClick, currentUser, coo
       <canvas
         ref={canvasRef}
         className="block"
-        style={{ cursor: cursorStyle }}
+        style={{ cursor: cooldownActive ? 'not-allowed' : 'crosshair' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}

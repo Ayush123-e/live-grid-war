@@ -1,14 +1,6 @@
 import { useState, useEffect } from 'react'
 
-const MOCK_USERS = [
-  { id: 1, name: 'Ayush K.', color: '#6366f1', cells: 42, online: true },
-  { id: 2, name: 'Priya S.', color: '#f43f5e', cells: 38, online: true },
-  { id: 3, name: 'Rahul M.', color: '#22c55e', cells: 27, online: false },
-  { id: 4, name: 'Sneha D.', color: '#f59e0b', cells: 19, online: true },
-  { id: 5, name: 'Vikram P.', color: '#06b6d4', cells: 15, online: false },
-]
-
-export default function Sidebar({ stats, isOpen, onToggle, connected }) {
+export default function Sidebar({ stats, isOpen, onToggle, connected, userProfile, leaderboard }) {
   const [time, setTime] = useState(new Date())
 
   useEffect(() => {
@@ -88,11 +80,54 @@ export default function Sidebar({ stats, isOpen, onToggle, connected }) {
           </div>
         </div>
 
+        {/* User Profile Card */}
+        {userProfile && (
+          <div className="mx-6 mb-2 p-3 rounded-xl flex items-center justify-between"
+            style={{
+              background: 'rgba(99,102,241,0.04)',
+              border: '1px solid rgba(99,102,241,0.08)',
+            }}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              {/* Color badge */}
+              <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black select-none"
+                style={{
+                  background: `${userProfile.color}22`,
+                  color: userProfile.color,
+                  border: `1.5px solid ${userProfile.color}44`,
+                  boxShadow: `0 0 10px ${userProfile.color}33`,
+                }}
+              >
+                {userProfile.username.charAt(0)}
+              </div>
+              <div className="min-w-0">
+                <p className="text-[9px] font-bold tracking-wider uppercase" style={{ color: '#5c5f73' }}>
+                  My Identity
+                </p>
+                <h4 className="text-xs font-semibold truncate" style={{ color: '#e2e4ed' }}>
+                  {userProfile.username}
+                </h4>
+              </div>
+            </div>
+            {/* Color pill code */}
+            <div className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-wider tabular-nums uppercase"
+              style={{
+                background: 'rgba(255, 255, 255, 0.04)',
+                color: '#8b8fa3',
+                border: '1px solid rgba(255, 255, 255, 0.06)',
+              }}
+            >
+              {userProfile.color}
+            </div>
+          </div>
+        )}
+
         {/* Divider */}
-        <div className="mx-6 h-px" style={{ background: 'rgba(99,102,241,0.08)' }} />
+        <div className="mx-6 h-px my-2" style={{ background: 'rgba(99,102,241,0.08)' }} />
 
         {/* Stats cards */}
-        <div className="px-6 py-5 grid grid-cols-2 gap-3">
+        <div className="px-6 py-3 grid grid-cols-2 gap-3">
           <StatCard
             icon={
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -146,95 +181,113 @@ export default function Sidebar({ stats, isOpen, onToggle, connected }) {
         </div>
 
         {/* Divider */}
-        <div className="mx-6 h-px" style={{ background: 'rgba(99,102,241,0.08)' }} />
+        <div className="mx-6 h-px my-2" style={{ background: 'rgba(99,102,241,0.08)' }} />
 
         {/* Leaderboard */}
-        <div className="px-6 py-4 flex-1 overflow-y-auto">
+        <div className="px-6 py-3 flex-1 overflow-y-auto">
           <h3
             className="text-[10px] font-bold tracking-widest uppercase mb-3"
             style={{ color: '#5c5f73' }}
           >
             Leaderboard
           </h3>
-          <div className="space-y-1.5">
-            {MOCK_USERS.sort((a, b) => b.cells - a.cells).map((user, i) => (
-              <div
-                key={user.id}
-                className="flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors duration-200"
-                style={{
-                  background: i === 0 ? 'rgba(99,102,241,0.06)' : 'transparent',
-                }}
-                onMouseEnter={(e) =>
-                  (e.currentTarget.style.background = 'rgba(99,102,241,0.08)')
-                }
-                onMouseLeave={(e) =>
-                  (e.currentTarget.style.background =
-                    i === 0 ? 'rgba(99,102,241,0.06)' : 'transparent')
-                }
-              >
-                {/* Rank */}
-                <span
-                  className="text-xs font-bold w-5 text-center"
-                  style={{
-                    color: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : i === 2 ? '#d97706' : '#5c5f73',
-                  }}
-                >
-                  {i + 1}
-                </span>
-
-                {/* Avatar */}
-                <div className="relative">
+          {leaderboard.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-28 border border-dashed rounded-xl"
+              style={{
+                borderColor: 'rgba(255,255,255,0.05)',
+                color: '#5c5f73',
+              }}
+            >
+              <span className="text-xs">No active claims yet</span>
+            </div>
+          ) : (
+            <div className="relative overflow-hidden" style={{ height: `${leaderboard.length * 44}px` }}>
+              {leaderboard.map((user, i) => {
+                const isCurrentUser = userProfile && user.name === userProfile.username;
+                return (
                   <div
-                    className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold"
+                    key={user.id || user.name}
+                    className="absolute left-0 right-0 flex items-center gap-3 px-3 py-2 rounded-lg transition-all duration-500 ease-[cubic-bezier(0.2,0.8,0.2,1)]"
                     style={{
-                      background: `${user.color}22`,
-                      color: user.color,
-                      border: `1.5px solid ${user.color}44`,
+                      transform: `translateY(${i * 44}px)`,
+                      height: '38px',
+                      background: isCurrentUser
+                        ? 'rgba(99,102,241,0.08)'
+                        : i === 0
+                        ? 'rgba(255, 215, 0, 0.03)'
+                        : 'transparent',
+                      border: isCurrentUser
+                        ? '1px solid rgba(99,102,241,0.2)'
+                        : i === 0
+                        ? '1px solid rgba(255, 215, 0, 0.1)'
+                        : '1px solid transparent',
                     }}
                   >
-                    {user.name.charAt(0)}
-                  </div>
-                  {user.online && (
-                    <div
-                      className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full"
+                    {/* Rank */}
+                    <span
+                      className="text-xs font-bold w-5 text-center"
                       style={{
-                        background: '#22c55e',
-                        border: '2px solid #0c0e14',
-                        boxShadow: '0 0 6px rgba(34,197,94,0.5)',
+                        color: i === 0 ? '#f59e0b' : i === 1 ? '#94a3b8' : i === 2 ? '#d97706' : '#5c5f73',
                       }}
-                    />
-                  )}
-                </div>
+                    >
+                      {i + 1}
+                    </span>
 
-                {/* Name */}
-                <div className="flex-1 min-w-0">
-                  <p
-                    className="text-xs font-medium truncate"
-                    style={{ color: '#e2e4ed' }}
-                  >
-                    {user.name}
-                  </p>
-                </div>
+                    {/* Avatar */}
+                    <div className="relative">
+                      <div
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold"
+                        style={{
+                          background: `${user.color}22`,
+                          color: user.color,
+                          border: `1.5px solid ${user.color}44`,
+                        }}
+                      >
+                        {user.name.charAt(0)}
+                      </div>
+                      <div
+                        className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full"
+                        style={{
+                          background: '#22c55e',
+                          border: '1.5px solid #0c0e14',
+                        }}
+                      />
+                    </div>
 
-                {/* Cell count */}
-                <div className="flex items-center gap-1">
-                  <div
-                    className="w-2 h-2 rounded-sm"
-                    style={{ background: user.color }}
-                  />
-                  <span
-                    className="text-xs font-semibold tabular-nums"
-                    style={{ color: '#8b8fa3' }}
-                  >
-                    {user.cells}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
+                    {/* Name */}
+                    <div className="flex-1 min-w-0">
+                      <p
+                        className="text-xs font-medium truncate"
+                        style={{ color: isCurrentUser ? '#fff' : '#e2e4ed' }}
+                      >
+                        {user.name} {isCurrentUser && <span className="text-[9px] opacity-75 font-semibold">(You)</span>}
+                      </p>
+                    </div>
+
+                    {/* Cell count */}
+                    <div className="flex items-center gap-1.5">
+                      <div
+                        className="w-1.5 h-1.5 rounded-full"
+                        style={{
+                          background: user.color,
+                          boxShadow: `0 0 6px ${user.color}`,
+                        }}
+                      />
+                      <span
+                        className="text-xs font-semibold tabular-nums"
+                        style={{ color: '#8b8fa3' }}
+                      >
+                        {user.cells}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
         </div>
 
-        {/* Footer */}
+        {/* Footer with connection status */}
         <div
           className="px-6 py-4"
           style={{ borderTop: '1px solid rgba(99,102,241,0.08)' }}

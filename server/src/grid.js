@@ -13,6 +13,9 @@ class GridStore {
     /** @type {Map<string, { x: number, y: number, color: string, owner: string, claimedAt: number }>} */
     this.cells = new Map()
 
+    /** @type {Map<string, number>} */
+    this.clickCounts = new Map()
+
     /**
      * Per-cell lock set to guarantee sequential processing.
      * While a cell key is in this Set, any other claim to that
@@ -74,10 +77,25 @@ class GridStore {
   }
 
   /**
+   * Increment and return historical click count for a cell.
+   * @param {number} x
+   * @param {number} y
+   * @returns {number}
+   */
+  incrementClickCount(x, y) {
+    const key = `${x},${y}`
+    const current = this.clickCounts.get(key) || 0
+    const next = current + 1
+    this.clickCounts.set(key, next)
+    return next
+  }
+
+  /**
    * Attempt to claim a cell with conflict detection.
    *
-   * Returns one of three outcomes:
-   *   - { status: 'claimed', cell }          → success, cell was free or self-owned
+   * Returns one of four outcomes:
+   *   - { status: 'claimed', cell }          → success, cell was free or owned by someone else but overridden? No, first-writer-wins
+   *   - { status: 'unclaimed', cell }        → success, toggled self-owned cell off
    *   - { status: 'conflict', currentOwner } → cell is owned by someone else
    *   - { status: 'error', reason }          → validation failure
    *   - { status: 'locked' }                 → cell is being processed by another request
@@ -86,7 +104,7 @@ class GridStore {
    * @param {number} y
    * @param {string} color  — hex color string
    * @param {string} owner  — socket id
-   * @returns {{ status: string, cell?: object, currentOwner?: object, reason?: string }}
+   * @returns {{ status: string, cell?: object, currentOwner?: object, reason?: string, clickCount?: number }}
    */
   tryClaimCell(x, y, color, owner) {
     // Validate inputs
@@ -100,6 +118,7 @@ class GridStore {
     }
 
     const key = `${x},${y}`
+    const clickCount = this.incrementClickCount(x, y)
 
     // Try to acquire cell-level lock
     if (!this.acquireLock(key)) {
@@ -109,15 +128,26 @@ class GridStore {
     try {
       const existing = this.cells.get(key)
 
+      // Toggling own cell -> Unclaim it
+      if (existing && existing.owner === owner) {
+        this.cells.delete(key)
+        return {
+          status: 'unclaimed',
+          cell: { x, y, color: null, owner: null },
+          clickCount,
+        }
+      }
+
       // Conflict: cell is already claimed by a different owner
       if (existing && existing.owner !== owner) {
         return {
           status: 'conflict',
           currentOwner: existing,
+          clickCount,
         }
       }
 
-      // Claim the cell (or re-claim own cell with new color)
+      // Claim the cell
       const cell = {
         x,
         y,
@@ -127,7 +157,7 @@ class GridStore {
       }
       this.cells.set(key, cell)
 
-      return { status: 'claimed', cell }
+      return { status: 'claimed', cell, clickCount }
     } finally {
       // Always release the lock
       this.releaseLock(key)

@@ -2,7 +2,8 @@
  * useSocket — Custom hook for Socket.io connection management.
  *
  * Handles connection lifecycle, grid state sync, delta updates,
- * rollback events, cooldown errors, and live user count.
+ * rollback events, cooldown errors, live user count, dynamic leaderboard,
+ * and user profile info.
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react'
@@ -15,9 +16,12 @@ export default function useSocket() {
   const [connected, setConnected] = useState(false)
   const [onlineUsers, setOnlineUsers] = useState(0)
   const [gridSize, setGridSize] = useState(100)
+  const [userProfile, setUserProfile] = useState(null)
+  const [leaderboard, setLeaderboard] = useState([])
 
-  // Grid state as a Map — updated in-place via delta events
+  // Grid states
   const [claimedCells, setClaimedCells] = useState(() => new Map())
+  const [clickCounts, setClickCounts] = useState(() => new Map())
 
   // Pulse trigger ref — set by App, called by socket events
   const triggerPulseRef = useRef(null)
@@ -43,13 +47,26 @@ export default function useSocket() {
       setConnected(false)
     })
 
+    // -- Profile assigned --
+    socket.on('user:profile', (profile) => {
+      setUserProfile(profile)
+    })
+
+    // -- Leaderboard updates --
+    socket.on('leaderboard:update', (top5) => {
+      setLeaderboard(top5)
+    })
+
     // -- Initial grid state --
     socket.on('grid:init', (data) => {
       console.log(`[WS] Grid init: ${data.cells.length} cells, ${data.onlineUsers} online`)
       setGridSize(data.gridSize)
       setOnlineUsers(data.onlineUsers)
+      if (data.leaderboard) {
+        setLeaderboard(data.leaderboard)
+      }
 
-      // Build the Map from server's sparse cell array
+      // Build the claimed cells Map
       const map = new Map()
       for (const cell of data.cells) {
         const key = `${cell.x},${cell.y}`
@@ -60,36 +77,48 @@ export default function useSocket() {
         })
       }
       setClaimedCells(map)
+
+      // Build the click history Map
+      const clicks = new Map(Object.entries(data.clickHistory || {}))
+      setClickCounts(clicks)
     })
 
-    // -- Delta update: a single cell was claimed by someone --
+    // -- Delta update: a single cell was claimed, unclaimed or clicked --
     socket.on('cell-updated', (cell) => {
       setClaimedCells((prev) => {
         const next = new Map(prev)
         const key = `${cell.x},${cell.y}`
-        const existing = next.get(key)
 
-        // If this is OUR optimistic cell being confirmed, remove optimistic flag
-        // and trigger pulse; otherwise just set the new cell data
-        const isOurs = existing?.optimistic && cell.owner === socket.id
+        if (cell.color === null) {
+          next.delete(key)
+        } else {
+          next.set(key, {
+            color: cell.color,
+            label: cell.owner?.slice(-2)?.toUpperCase() || '?',
+            owner: cell.owner,
+            optimistic: false,
+          })
 
-        next.set(key, {
-          color: cell.color,
-          label: cell.owner?.slice(-2)?.toUpperCase() || '?',
-          owner: cell.owner,
-          optimistic: false,
-        })
-
-        // Trigger pulse for confirmed claims (ours or others')
-        if (triggerPulseRef.current) {
-          triggerPulseRef.current(cell.x, cell.y, cell.color)
+          // Trigger pulse for claimed cells
+          if (triggerPulseRef.current) {
+            triggerPulseRef.current(cell.x, cell.y, cell.color)
+          }
         }
-
         return next
       })
+
+      // Update clickCounts Map for heatmap rendering
+      if (cell.clickCount !== undefined) {
+        setClickCounts((prev) => {
+          const next = new Map(prev)
+          const key = `${cell.x},${cell.y}`
+          next.set(key, cell.clickCount)
+          return next
+        })
+      }
     })
 
-    // -- Sync rollback: our optimistic claim was rejected (conflict / lock) --
+    // -- Sync rollback: our optimistic claim was rejected --
     socket.on('sync-rollback', (data) => {
       console.log(`[WS] Rollback: (${data.x},${data.y}) — ${data.reason}`)
 
@@ -98,10 +127,8 @@ export default function useSocket() {
         const key = `${data.x},${data.y}`
         const existing = next.get(key)
 
-        // Only rollback if it's still our optimistic cell
         if (existing?.optimistic) {
           if (data.currentCell) {
-            // Replace with the actual owner's data
             next.set(key, {
               color: data.currentCell.color,
               label: data.currentCell.owner?.slice(-2)?.toUpperCase() || '?',
@@ -109,19 +136,26 @@ export default function useSocket() {
               optimistic: false,
             })
           } else {
-            // No current owner — just remove
             next.delete(key)
           }
         }
-
         return next
       })
+
+      // Update click counts if provided during rollback click
+      if (data.clickCount !== undefined) {
+        setClickCounts((prev) => {
+          const next = new Map(prev)
+          const key = `${data.x},${data.y}`
+          next.set(key, data.clickCount)
+          return next
+        })
+      }
     })
 
     // -- Cooldown error --
     socket.on('error-cooldown', (data) => {
       console.warn(`[WS] Cooldown: ${data.reason}`)
-      // Rollback the optimistic cell for the blocked claim
       if (data.cell) {
         setClaimedCells((prev) => {
           const next = new Map(prev)
@@ -148,16 +182,14 @@ export default function useSocket() {
     }
   }, [])
 
-  // ── Claim a cell via socket (with optimistic UI) ──
-  const claimCell = useCallback((x, y, color) => {
+  // ── Claim a cell via socket ──
+  const claimCell = useCallback((x, y) => {
     const socket = socketRef.current
     if (!socket?.connected) return
 
-    // Emit with acknowledgement callback
-    socket.emit('claim-cell', { x, y, color }, (response) => {
+    socket.emit('claim-cell', { x, y }, (response) => {
       if (!response.success) {
         console.warn(`[WS] Claim rejected: ${response.reason}`)
-        // Rollback if the ack says failure (belt-and-suspenders with sync-rollback)
         setClaimedCells((prev) => {
           const next = new Map(prev)
           const key = `${x},${y}`
@@ -185,7 +217,10 @@ export default function useSocket() {
     connected,
     onlineUsers,
     gridSize,
+    userProfile,
+    leaderboard,
     claimedCells,
+    clickCounts,
     setClaimedCells,
     claimCell,
     triggerPulseRef,

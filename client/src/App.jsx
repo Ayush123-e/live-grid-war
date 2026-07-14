@@ -3,23 +3,24 @@ import GridCanvas from './components/GridCanvas'
 import Sidebar from './components/Sidebar'
 import useSocket from './hooks/useSocket'
 
-// Color palette for users
-const COLORS = ['#6366f1', '#f43f5e', '#22c55e', '#f59e0b', '#06b6d4', '#8b5cf6', '#ec4899']
-
 const COOLDOWN_DURATION = 3 // seconds
 
 function App() {
-  // ── Socket connection (replaces all mock/simulated state) ──
   const {
+    socket,
     connected,
     onlineUsers,
     claimedCells,
+    clickCounts,
     setClaimedCells,
     claimCell,
     triggerPulseRef,
+    userProfile,
+    leaderboard,
   } = useSocket()
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [heatmapMode, setHeatmapMode] = useState(false)
 
   // Cooldown state
   const [cooldownActive, setCooldownActive] = useState(false)
@@ -68,28 +69,46 @@ function App() {
 
       const key = `${x},${y}`
       const existing = claimedCells.get(key)
+      const currentSocketId = socket.current?.id
 
-      // Don't allow clicking already-claimed cells
-      if (existing && !existing.optimistic) return
+      // Check ownership
+      const isOwnCell = existing && existing.owner === currentSocketId
+
+      // Block clicking cells owned by others
+      if (existing && !isOwnCell && !existing.optimistic) return
+
+      if (isOwnCell) {
+        // Optimistic unclaim (toggling own cell off)
+        setClaimedCells((prev) => {
+          const next = new Map(prev)
+          next.delete(key)
+          return next
+        })
+        // Emit claimCell to server which will toggle it off (unclaim)
+        claimCell(x, y)
+        return
+      }
 
       // Store the pulse trigger so socket events can fire it
       triggerPulseRef.current = triggerPulseFn
 
       // --- Optimistic UI: instantly show the cell as claimed ---
-      const color = COLORS[Math.floor(Math.random() * COLORS.length)]
+      const color = userProfile?.color || '#6366f1'
+      const label = userProfile?.username?.slice(-2)?.toUpperCase() || 'U'
+
       setClaimedCells((prev) => {
         const next = new Map(prev)
-        next.set(key, { color, label: 'U', optimistic: true })
+        next.set(key, { color, label, owner: currentSocketId, optimistic: true })
         return next
       })
 
       // Start the cooldown immediately
       startCooldown()
 
-      // --- Emit to server (rollback handled by useSocket on failure) ---
-      claimCell(x, y, color)
+      // --- Emit to server ---
+      claimCell(x, y)
     },
-    [cooldownActive, claimedCells, startCooldown, claimCell, setClaimedCells, triggerPulseRef]
+    [cooldownActive, claimedCells, startCooldown, claimCell, setClaimedCells, triggerPulseRef, userProfile, socket]
   )
 
   const stats = {
@@ -102,11 +121,38 @@ function App() {
       {/* Grid Canvas fills the entire viewport */}
       <GridCanvas
         claimedCells={claimedCells}
+        clickCounts={clickCounts}
         onCellClick={handleCellClick}
-        currentUser="U"
+        currentUser={userProfile?.username || 'U'}
         cooldownActive={cooldownActive}
         cooldownRemaining={cooldownRemaining}
+        heatmapMode={heatmapMode}
       />
+
+      {/* Control panel for toggling heatmap mode */}
+      <div className="fixed top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 p-1 rounded-full transition-all duration-300"
+        style={{
+          background: 'rgba(12, 14, 20, 0.85)',
+          backdropFilter: 'blur(16px)',
+          border: '1px solid rgba(99, 102, 241, 0.15)',
+          boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
+        }}
+      >
+        <button
+          onClick={() => setHeatmapMode(!heatmapMode)}
+          className="flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-semibold select-none transition-all duration-300 cursor-pointer"
+          style={{
+            background: heatmapMode ? 'linear-gradient(135deg, #6366f1, #8b5cf6)' : 'transparent',
+            color: heatmapMode ? '#fff' : '#8b8fa3',
+            boxShadow: heatmapMode ? '0 2px 10px rgba(99, 102, 241, 0.4)' : 'none',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+          </svg>
+          <span>{heatmapMode ? 'Heatmap Mode Active' : 'View Activity Heatmap'}</span>
+        </button>
+      </div>
 
       {/* Floating Sidebar */}
       <Sidebar
@@ -114,6 +160,8 @@ function App() {
         isOpen={sidebarOpen}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
         connected={connected}
+        userProfile={userProfile}
+        leaderboard={leaderboard}
       />
 
       {/* Top-left branding */}

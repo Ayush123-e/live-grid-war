@@ -65,6 +65,7 @@ const io = new Server(server, {
 const grid = new GridStore()
 const users = { count: 0 }
 const cooldowns = new Map() // socket.id → last claim timestamp
+const profiles = new Map()  // socket.id → { username, color }
 
 // ---------------------------------------------------------------------------
 // Socket.io connection handler
@@ -75,8 +76,8 @@ io.on('connection', (socket) => {
   // Broadcast updated user count to everyone
   io.emit('user-count', { onlineUsers: users.count })
 
-  // Register all event handlers for this socket
-  registerSocketHandlers(io, socket, grid, users, cooldowns)
+  // Register all event handlers for this socket, passing the profiles map
+  registerSocketHandlers(io, socket, grid, users, cooldowns, profiles)
 })
 
 // ---------------------------------------------------------------------------
