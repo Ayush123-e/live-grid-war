@@ -1,5 +1,8 @@
 # Live Grid War
 
+* **Live Demo**: [https://your-project.vercel.app](https://your-project.vercel.app)
+* **Backend API**: [https://your-backend.onrender.com](https://your-backend.onrender.com)
+
 A high-performance, real-time shared multiplayer grid game where players battle to claim territory on a massive 100×100 grid (10,000 cells). Renders dynamically at **60FPS** via **HTML5 Canvas** and synchronizes state in real-time over **Node.js (Express + Socket.io)**.
 
 ---
