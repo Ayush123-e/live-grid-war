@@ -1,40 +1,17 @@
-/**
- * Socket.io event handlers — separated from server setup for testability.
- *
- * Premium & Anti-cheat features:
- *   1. Dynamic Leaderboard (computed across active profiles, broadcast top 5)
- *   2. User Identity & Colors (cool names generated & persistent color assigned)
- *   3. Click counts & Heatmap tracking synced in real-time
- *   4. Strict Rate Limiting (3s cooldown server-enforced)
- *   5. Race-condition sequential cell locks & rollback events
- */
-
-const COOLDOWN_MS = 3000
+const CD_LIMIT = 3000
 
 const ADJECTIVES = ["Neon", "Pixel", "Cyber", "Retro", "Laser", "Quantum", "Turbo", "Shadow", "Matrix", "Logic", "Circuit", "Data", "Bit", "Synth", "Aura", "Binary", "Hyper", "Vortex", "Cosmic", "Glitch"];
 const NOUNS = ["Knight", "Boss", "Overlord", "Warrior", "Samurai", "Wave", "Ninja", "King", "Falcon", "Ghost", "Slayer", "Runner", "Seeker", "Viper", "Wizard", "Phantom", "Crusher", "Storm", "Striker", "Specter"];
 const VIBRANT_COLORS = ["#6366f1", "#f43f5e", "#22c55e", "#f59e0b", "#06b6d4", "#8b5cf6", "#ec4899", "#10b981", "#3b82f6", "#f97316", "#a855f7", "#14b8a6"];
 
-/**
- * Generate a random cool name and color.
- * @returns {{ username: string, color: string }}
- */
 function generateRandomProfile() {
   const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
   const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
   const color = VIBRANT_COLORS[Math.floor(Math.random() * VIBRANT_COLORS.length)];
-  const num = Math.floor(Math.random() * 900) + 100; // 100-999
-  return {
-    username: `${adj}${noun}_${num}`,
-    color,
-  };
+  const num = Math.floor(Math.random() * 900) + 100;
+  return { username: `${adj}${noun}_${num}`, color };
 }
 
-/**
- * Generate a unique profile not taken by any active user.
- * @param {Map<string, object>} profiles
- * @returns {{ username: string, color: string }}
- */
 function generateUniqueProfile(profiles) {
   let profile;
   let attempts = 0;
@@ -46,22 +23,12 @@ function generateUniqueProfile(profiles) {
   return profile;
 }
 
-/**
- * Calculate dynamic Top 5 leaderboard of active users and broadcast to everyone.
- * @param {import('socket.io').Server} io
- * @param {import('./grid')} grid
- * @param {Map<string, object>} profiles
- */
 function broadcastLeaderboard(io, grid, profiles) {
   const counts = {};
-  for (const id of profiles.keys()) {
-    counts[id] = 0;
-  }
+  for (const id of profiles.keys()) counts[id] = 0;
 
   for (const cell of grid.cells.values()) {
-    if (counts[cell.owner] !== undefined) {
-      counts[cell.owner]++;
-    }
+    if (counts[cell.owner] !== undefined) counts[cell.owner]++;
   }
 
   const leaderboard = Array.from(profiles.entries()).map(([id, profile]) => ({
@@ -73,21 +40,9 @@ function broadcastLeaderboard(io, grid, profiles) {
   }));
 
   leaderboard.sort((a, b) => b.cells - a.cells || a.name.localeCompare(b.name));
-
-  const top5 = leaderboard.slice(0, 5);
-  io.emit('leaderboard:update', top5);
+  io.emit('leaderboard:update', leaderboard.slice(0, 5));
 }
 
-/**
- * Register all socket events for a connected client.
- *
- * @param {import('socket.io').Server} io
- * @param {import('socket.io').Socket} socket
- * @param {import('./grid')} grid
- * @param {{ count: number }} users — shared mutable user counter
- * @param {Map<string, number>} cooldowns — per-socket cooldown tracker
- * @param {Map<string, object>} profiles — per-socket profile tracker
- */
 function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
   let profile = socket.handshake.auth?.profile;
 
@@ -148,26 +103,21 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
     leaderboard: getLeaderboardState(),
   });
 
-  console.log(
-    `[+] Profile assigned: ${profile.username} (${profile.color}) for ${socket.id}`
-  );
-
+  console.log(`[+] Profile assigned: ${profile.username} (${profile.color}) for ${socket.id}`);
   broadcastLeaderboard(io, grid, profiles);
 
   socket.on('claim-cell', (data, ack) => {
     const respond = typeof ack === 'function' ? ack : () => {};
-
     if (!data || typeof data !== 'object') {
       return respond({ success: false, reason: 'Invalid payload' });
     }
 
     const { x, y } = data;
-
     const lastClaim = cooldowns.get(socket.id) || 0
     const elapsed = Date.now() - lastClaim
 
-    if (elapsed < COOLDOWN_MS) {
-      const remainingMs = COOLDOWN_MS - elapsed;
+    if (elapsed < CD_LIMIT) {
+      const remainingMs = CD_LIMIT - elapsed;
       const remainingSec = (remainingMs / 1000).toFixed(1);
 
       socket.emit('error-cooldown', {
@@ -187,11 +137,10 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
     const result = grid.tryClaimCell(x, y, userColor, socket.id);
 
     switch (result.status) {
-      case 'error': {
+      case 'error':
         return respond({ success: false, reason: result.reason });
-      }
 
-      case 'locked': {
+      case 'locked':
         socket.emit('sync-rollback', {
           x,
           y,
@@ -200,7 +149,6 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
           clickCount: grid.clickCounts.get(`${x},${y}`) || 0,
         });
         return respond({ success: false, reason: 'Cell is locked' });
-      }
 
       case 'conflict': {
         const winner = result.currentOwner;
@@ -229,37 +177,30 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
         });
       }
 
-      case 'unclaimed': {
+      case 'unclaimed':
         respond({ success: true, cell: result.cell });
-
         io.emit('cell-updated', {
           ...result.cell,
           clickCount: result.clickCount,
         });
-
         broadcastLeaderboard(io, grid, profiles);
         break;
-      }
 
-      case 'claimed': {
+      case 'claimed':
         cooldowns.set(socket.id, Date.now());
         respond({ success: true, cell: result.cell });
-
         io.emit('cell-updated', {
           ...result.cell,
           ownerName: profile.username,
           clickCount: result.clickCount,
         });
-
         broadcastLeaderboard(io, grid, profiles);
         break;
-      }
     }
   });
 
-  socket.on('disconnect', (reason) => {
+  socket.on('disconnect', () => {
     users.count--;
-
     const releasedCells = [];
     for (const [key, cell] of grid.cells.entries()) {
       if (cell.owner === socket.id) {
@@ -286,10 +227,7 @@ function registerSocketHandlers(io, socket, grid, users, cooldowns, profiles) {
     }
 
     broadcastLeaderboard(io, grid, profiles);
-
-    console.log(
-      `[-] Client disconnected: ${profile.username} | Online: ${users.count} | Released: ${releasedCells.length} cells`
-    );
+    console.log(`[-] Client disconnected: ${profile.username} | Online: ${users.count} | Released: ${releasedCells.length} cells`);
   });
 }
 

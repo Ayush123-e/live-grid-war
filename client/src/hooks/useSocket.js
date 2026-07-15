@@ -1,11 +1,3 @@
-/**
- * useSocket — Custom hook for Socket.io connection management.
- *
- * Handles connection lifecycle, grid state sync, delta updates,
- * rollback events, cooldown errors, live user count, dynamic leaderboard,
- * and user profile info.
- */
-
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { io } from 'socket.io-client'
 import { getInitials } from '../utils/initials'
@@ -13,21 +5,16 @@ import { getInitials } from '../utils/initials'
 const SERVER_URL = import.meta.env.VITE_SERVER_URL || 'http://localhost:3001'
 
 export default function useSocket() {
-  const socketRef = useRef(null)
+  const ws = useRef(null)
   const [connected, setConnected] = useState(false)
-  const [onlineUsers, setOnlineUsers] = useState(0)
+  const [usersOnline, setUsersOnline] = useState(0)
   const [gridSize, setGridSize] = useState(100)
-  const [userProfile, setUserProfile] = useState(null)
+  const [profile, setProfile] = useState(null)
   const [leaderboard, setLeaderboard] = useState([])
+  const [cells, setCells] = useState(() => new Map())
+  const [clicks, setClicks] = useState(() => new Map())
+  const onPulse = useRef(null)
 
-  // Grid states
-  const [claimedCells, setClaimedCells] = useState(() => new Map())
-  const [clickCounts, setClickCounts] = useState(() => new Map())
-
-  // Pulse trigger ref — set by App, called by socket events
-  const triggerPulseRef = useRef(null)
-
-  // ── Connect on mount ──
   useEffect(() => {
     const saved = localStorage.getItem('live-grid-war:profile')
     const authData = saved ? JSON.parse(saved) : null
@@ -39,7 +26,7 @@ export default function useSocket() {
       reconnectionAttempts: 10,
       auth: authData ? { profile: authData } : {},
     })
-    socketRef.current = socket
+    ws.current = socket
 
     socket.on('connect', () => {
       console.log('[WS] Connected:', socket.id)
@@ -51,41 +38,35 @@ export default function useSocket() {
       setConnected(false)
     })
 
-    socket.on('user:profile', (profile) => {
-      setUserProfile(profile)
-      localStorage.setItem('live-grid-war:profile', JSON.stringify(profile))
+    socket.on('user:profile', (p) => {
+      setProfile(p)
+      localStorage.setItem('live-grid-war:profile', JSON.stringify(p))
     })
 
-    socket.on('leaderboard:update', (top5) => {
-      setLeaderboard(top5)
-    })
+    socket.on('leaderboard:update', setLeaderboard)
 
     socket.on('grid:init', (data) => {
       console.log(`[WS] Grid init: ${data.cells.length} cells, ${data.onlineUsers} online`)
       setGridSize(data.gridSize)
-      setOnlineUsers(data.onlineUsers)
-      if (data.leaderboard) {
-        setLeaderboard(data.leaderboard)
-      }
+      setUsersOnline(data.onlineUsers)
+      if (data.leaderboard) setLeaderboard(data.leaderboard)
 
       const map = new Map()
       for (const cell of data.cells) {
-        const key = `${cell.x},${cell.y}`
-        map.set(key, {
+        map.set(`${cell.x},${cell.y}`, {
           color: cell.color,
           label: getInitials(cell.ownerName || cell.owner),
           owner: cell.owner,
           ownerName: cell.ownerName || cell.owner,
         })
       }
-      setClaimedCells(map)
+      setCells(map)
 
-      const clicks = new Map(Object.entries(data.clickHistory || {}))
-      setClickCounts(clicks)
+      setClicks(new Map(Object.entries(data.clickHistory || {})))
     })
 
     socket.on('cell-updated', (cell) => {
-      setClaimedCells((prev) => {
+      setCells((prev) => {
         const next = new Map(prev)
         const key = `${cell.x},${cell.y}`
 
@@ -100,18 +81,17 @@ export default function useSocket() {
             optimistic: false,
           })
 
-          if (triggerPulseRef.current) {
-            triggerPulseRef.current(cell.x, cell.y, cell.color)
+          if (onPulse.current) {
+            onPulse.current(cell.x, cell.y, cell.color)
           }
         }
         return next
       })
 
       if (cell.clickCount !== undefined) {
-        setClickCounts((prev) => {
+        setClicks((prev) => {
           const next = new Map(prev)
-          const key = `${cell.x},${cell.y}`
-          next.set(key, cell.clickCount)
+          next.set(`${cell.x},${cell.y}`, cell.clickCount)
           return next
         })
       }
@@ -120,7 +100,7 @@ export default function useSocket() {
     socket.on('sync-rollback', (data) => {
       console.log(`[WS] Rollback: (${data.x},${data.y}) — ${data.reason}`)
 
-      setClaimedCells((prev) => {
+      setCells((prev) => {
         const next = new Map(prev)
         const key = `${data.x},${data.y}`
         const existing = next.get(key)
@@ -142,10 +122,9 @@ export default function useSocket() {
       })
 
       if (data.clickCount !== undefined) {
-        setClickCounts((prev) => {
+        setClicks((prev) => {
           const next = new Map(prev)
-          const key = `${data.x},${data.y}`
-          next.set(key, data.clickCount)
+          next.set(`${data.x},${data.y}`, data.clickCount)
           return next
         })
       }
@@ -154,11 +133,10 @@ export default function useSocket() {
     socket.on('error-cooldown', (data) => {
       console.warn(`[WS] Cooldown: ${data.reason}`)
       if (data.cell) {
-        setClaimedCells((prev) => {
+        setCells((prev) => {
           const next = new Map(prev)
           const key = `${data.cell.x},${data.cell.y}`
-          const existing = next.get(key)
-          if (existing?.optimistic) {
+          if (next.get(key)?.optimistic) {
             next.delete(key)
           }
           return next
@@ -167,24 +145,24 @@ export default function useSocket() {
     })
 
     socket.on('user-count', (data) => {
-      setOnlineUsers(data.onlineUsers)
+      setUsersOnline(data.onlineUsers)
     })
 
     return () => {
       socket.removeAllListeners()
       socket.disconnect()
-      socketRef.current = null
+      ws.current = null
     }
   }, [])
 
   const claimCell = useCallback((x, y) => {
-    const socket = socketRef.current
+    const socket = ws.current
     if (!socket?.connected) return
 
     socket.emit('claim-cell', { x, y }, (response) => {
       if (!response.success) {
         console.warn(`[WS] Claim rejected: ${response.reason}`)
-        setClaimedCells((prev) => {
+        setCells((prev) => {
           const next = new Map(prev)
           const key = `${x},${y}`
           const existing = next.get(key)
@@ -208,16 +186,16 @@ export default function useSocket() {
   }, [])
 
   return {
-    socket: socketRef,
+    socket: ws,
     connected,
-    onlineUsers,
+    usersOnline,
     gridSize,
-    userProfile,
+    profile,
     leaderboard,
-    claimedCells,
-    clickCounts,
-    setClaimedCells,
+    cells,
+    clicks,
+    setCells,
     claimCell,
-    triggerPulseRef,
+    onPulse,
   }
 }

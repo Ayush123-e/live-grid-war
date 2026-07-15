@@ -10,7 +10,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
 
   return (
     <>
-      {/* Toggle button - positioned absolutely and slides relative to the sidebar open state */}
       <button
         onClick={(e) => {
           e.stopPropagation()
@@ -46,7 +45,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
         </svg>
       </button>
 
-      {/* Sidebar panel - Stretched vertically from top-4 to bottom-4 */}
       <aside
         onMouseDown={(e) => e.stopPropagation()}
         onWheel={(e) => e.stopPropagation()}
@@ -60,7 +58,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
           boxShadow: isOpen ? '-10px 10px 40px rgba(0,0,0,0.5)' : 'none',
         }}
       >
-        {/* Header */}
         <div className="px-6 pt-6 pb-4">
           <div className="flex items-center gap-3 mb-1">
             <div
@@ -88,7 +85,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
           </div>
         </div>
 
-        {/* User Profile Card */}
         {userProfile && (
           <div className="mx-6 mb-2 p-3 rounded-xl flex items-center justify-between"
             style={{
@@ -97,7 +93,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
             }}
           >
             <div className="flex items-center gap-3 min-w-0">
-              {/* Color badge */}
               <div
                 className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black select-none"
                 style={{
@@ -118,7 +113,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
                 </h4>
               </div>
             </div>
-            {/* Color pill code */}
             <div className="px-2 py-0.5 rounded-md text-[9px] font-bold tracking-wider tabular-nums uppercase"
               style={{
                 background: 'rgba(255, 255, 255, 0.04)',
@@ -131,10 +125,8 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
           </div>
         )}
 
-        {/* Divider */}
         <div className="mx-6 h-px my-2" style={{ background: 'rgba(99,102,241,0.08)' }} />
 
-        {/* Stats cards */}
         <div className="px-6 py-3 grid grid-cols-2 gap-3">
           <StatCard
             icon={
@@ -188,10 +180,8 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
           />
         </div>
 
-        {/* Divider */}
         <div className="mx-6 h-px my-2" style={{ background: 'rgba(99,102,241,0.08)' }} />
 
-        {/* Leaderboard */}
         <div className="px-6 py-3 flex-1 overflow-y-auto">
           <h3
             className="text-[10px] font-bold tracking-widest uppercase mb-3"
@@ -231,7 +221,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
                         : '1px solid transparent',
                     }}
                   >
-                    {/* Rank */}
                     <span
                       className="text-xs font-bold w-5 text-center"
                       style={{
@@ -241,7 +230,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
                       {i + 1}
                     </span>
 
-                    {/* Avatar */}
                     <div className="relative">
                       <div
                         className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold"
@@ -262,7 +250,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
                       />
                     </div>
 
-                    {/* Name */}
                     <div className="flex-1 min-w-0">
                       <p
                         className="text-xs font-medium truncate"
@@ -272,7 +259,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
                       </p>
                     </div>
 
-                    {/* Cell count */}
                     <div className="flex items-center gap-1.5">
                       <div
                         className="w-1.5 h-1.5 rounded-full"
@@ -295,7 +281,6 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
           )}
         </div>
 
-        {/* Footer with connection status */}
         <div
           className="px-6 py-4"
           style={{ borderTop: '1px solid rgba(99,102,241,0.08)' }}

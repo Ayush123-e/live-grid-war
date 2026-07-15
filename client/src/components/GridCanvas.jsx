@@ -2,23 +2,12 @@ import { useRef, useEffect, useCallback, useState, useMemo } from 'react'
 
 const GRID_SIZE = 100
 const CELL_SIZE = 32
-const GRID_TOTAL = GRID_SIZE * CELL_SIZE // 3200px
+const GRID_TOTAL = GRID_SIZE * CELL_SIZE
 
-// Pulse animation config
-const PULSE_DURATION = 900 // ms
+const PULSE_DURATION = 900
 const PULSE_MAX_RADIUS = CELL_SIZE * 1.8
 
-/**
- * Perform smooth linear interpolation between colors to generate thermal gradient.
- * @param {number} ratio — normalized click value [0.0 - 1.0]
- * @returns {string} — rgb color string
- */
 function getHeatmapColor(ratio) {
-  // 0.00 -> #10121a (very dark navy)
-  // 0.25 -> #4c1d95 (rich purple)
-  // 0.50 -> #b91c1c (deep red)
-  // 0.75 -> #ea580c (neon orange)
-  // 1.00 -> #ffffff (bright white)
   let r, g, b;
   if (ratio < 0.25) {
     const t = ratio / 0.25;
@@ -45,44 +34,38 @@ function getHeatmapColor(ratio) {
 }
 
 export default function GridCanvas({
-  claimedCells,
-  clickCounts,
+  cells,
+  clicks,
   onCellClick,
   currentUser,
-  cooldownActive,
-  cooldownRemaining,
+  onCooldown,
+  cdLeft,
   heatmapMode
 }) {
   const canvasRef = useRef(null)
   const containerRef = useRef(null)
 
-  const cameraRef = useRef({
-    x: 0,
-    y: 0,
-    zoom: 1,
-  })
-  const isDragging = useRef(false)
-  const dragStart = useRef({ x: 0, y: 0 })
-  const lastCameraPos = useRef({ x: 0, y: 0 })
-  const hoveredCell = useRef(null)
-  const animFrameRef = useRef(null)
+  const cameraRef = useRef({ x: 0, y: 0, zoom: 1 })
+  const dragging = useRef(false)
+  const dragStartPos = useRef({ x: 0, y: 0 })
+  const prevCam = useRef({ x: 0, y: 0 })
+  const hoverCell = useRef(null)
+  const drawFrame = useRef(null)
+  const pulses = useRef([])
+  const centered = useRef(false)
 
-  const pulsesRef = useRef([])
-
-  const hasCentered = useRef(false)
-
-  const maxClicks = useMemo(() => {
+  const peakClicks = useMemo(() => {
     let max = 5
-    if (clickCounts) {
-      for (const count of clickCounts.values()) {
-        if (count > max) max = count
+    if (clicks) {
+      for (const val of clicks.values()) {
+        if (val > max) max = val
       }
     }
     return max
-  }, [clickCounts])
+  }, [clicks])
 
   const triggerPulse = useCallback((col, row, color) => {
-    pulsesRef.current.push({
+    pulses.current.push({
       col,
       row,
       color,
@@ -90,8 +73,8 @@ export default function GridCanvas({
     })
   }, [])
 
-  const triggerPulseRef = useRef(triggerPulse)
-  triggerPulseRef.current = triggerPulse
+  const onPulse = useRef(triggerPulse)
+  onPulse.current = triggerPulse
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current
@@ -106,16 +89,15 @@ export default function GridCanvas({
     ctx.setTransform(1, 0, 0, 1, 0, 0)
     ctx.clearRect(0, 0, canvas.width, canvas.height)
 
-    // apply DPR + camera
+    // apply DPR + camera matrix transform
     ctx.setTransform(dpr * zoom, 0, 0, dpr * zoom, dpr * camX * zoom, dpr * camY * zoom)
 
-    // visible range (only render what's on screen)
+    // visible range (screen viewport culling calculation)
     const startCol = Math.max(0, Math.floor(-camX / CELL_SIZE - 1))
     const endCol = Math.min(GRID_SIZE, Math.ceil((-camX + w / zoom) / CELL_SIZE + 1))
     const startRow = Math.max(0, Math.floor(-camY / CELL_SIZE - 1))
     const endRow = Math.min(GRID_SIZE, Math.ceil((-camY + h / zoom) / CELL_SIZE + 1))
 
-    // 1. Draw dynamic grid lines overlay first (underneath cell blocks)
     ctx.strokeStyle = 'rgba(30, 41, 59, 0.3)'
     ctx.lineWidth = 0.5
     for (let col = startCol; col <= endCol; col++) {
@@ -131,27 +113,21 @@ export default function GridCanvas({
       ctx.stroke()
     }
 
-    // 2. Draw claimed cells, highlights, and analytics on top of the grid lines
     for (let row = startRow; row < endRow; row++) {
       for (let col = startCol; col < endCol; col++) {
         const key = `${col},${row}`
-        const claimed = claimedCells?.get(key)
-        const isHovered =
-          hoveredCell.current &&
-          hoveredCell.current.x === col &&
-          hoveredCell.current.y === row
-
+        const claimed = cells?.get(key)
+        const isHovered = hoverCell.current && hoverCell.current.x === col && hoverCell.current.y === row
         const px = col * CELL_SIZE
         const py = row * CELL_SIZE
 
         if (heatmapMode) {
-          const count = clickCounts?.get(key) || 0
+          const count = clicks?.get(key) || 0
           if (count > 0) {
-            const ratio = Math.min(1, count / maxClicks)
+            const ratio = Math.min(1, count / peakClicks)
             ctx.fillStyle = getHeatmapColor(ratio)
             ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
 
-            // draw subtle layout borders for claimed cells in heatmap
             if (claimed) {
               ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)'
               ctx.lineWidth = 0.5
@@ -160,11 +136,9 @@ export default function GridCanvas({
           }
         } else {
           if (claimed) {
-            // Draw claimed block base
             ctx.fillStyle = claimed.color || '#6366f1'
             ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
 
-            // Subtle inner glow for claimed cells
             ctx.shadowColor = claimed.color || '#6366f1'
             ctx.shadowBlur = 6
             ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
@@ -198,7 +172,7 @@ export default function GridCanvas({
               ctx.strokeRect(px + 1, py + 1, CELL_SIZE - 2, CELL_SIZE - 2)
               ctx.setLineDash([])
             }
-          } else if (isHovered && !cooldownActive) {
+          } else if (isHovered && !onCooldown) {
             ctx.fillStyle = '#2a2d3e'
             ctx.fillRect(px + 0.5, py + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
           }
@@ -207,20 +181,18 @@ export default function GridCanvas({
     }
 
     const activePulses = []
-    for (const pulse of pulsesRef.current) {
+    for (const pulse of pulses.current) {
       const elapsed = now - pulse.startTime
       if (elapsed >= PULSE_DURATION) continue
       activePulses.push(pulse)
 
       const t = elapsed / PULSE_DURATION
-      const eased = 1 - Math.pow(1 - t, 3) // ease-out cubic
+      const eased = 1 - Math.pow(1 - t, 3)
       const radius = PULSE_MAX_RADIUS * eased
       const opacity = 1 - eased
-
       const cx = pulse.col * CELL_SIZE + CELL_SIZE / 2
       const cy = pulse.row * CELL_SIZE + CELL_SIZE / 2
 
-      // outer glow ring
       ctx.beginPath()
       ctx.arc(cx, cy, radius, 0, Math.PI * 2)
       ctx.strokeStyle = pulse.color
@@ -229,7 +201,6 @@ export default function GridCanvas({
       ctx.stroke()
       ctx.globalAlpha = 1
 
-      // inner radial glow
       const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, radius * 0.6)
       grad.addColorStop(0, `${pulse.color}${Math.round(opacity * 40).toString(16).padStart(2, '0')}`)
       grad.addColorStop(1, `${pulse.color}00`)
@@ -248,10 +219,10 @@ export default function GridCanvas({
         ctx.globalAlpha = 1
       }
     }
-    pulsesRef.current = activePulses
+    pulses.current = activePulses
 
-    if (hoveredCell.current && !cooldownActive) {
-      const { x: hx, y: hy } = hoveredCell.current
+    if (hoverCell.current && !onCooldown) {
+      const { x: hx, y: hy } = hoverCell.current
       if (hx >= 0 && hx < GRID_SIZE && hy >= 0 && hy < GRID_SIZE) {
         ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
         ctx.fillRect(hx * CELL_SIZE + 0.5, hy * CELL_SIZE + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
@@ -261,7 +232,7 @@ export default function GridCanvas({
         ctx.strokeRect(hx * CELL_SIZE + 0.5, hy * CELL_SIZE + 0.5, CELL_SIZE - 1, CELL_SIZE - 1)
 
         if (zoom > 0.5) {
-          const clicksText = heatmapMode ? ` | Clicks: ${clickCounts?.get(`${hx},${hy}`) || 0}` : ''
+          const clicksText = heatmapMode ? ` | Clicks: ${clicks?.get(`${hx},${hy}`) || 0}` : ''
           const tooltipText = `(${hx}, ${hy})${clicksText}`
           ctx.font = '500 10px Inter, system-ui, sans-serif'
           const metrics = ctx.measureText(tooltipText)
@@ -282,7 +253,7 @@ export default function GridCanvas({
         }
       }
     }
-  }, [claimedCells, clickCounts, maxClicks, cooldownActive, heatmapMode])
+  }, [cells, clicks, peakClicks, onCooldown, heatmapMode])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -297,11 +268,11 @@ export default function GridCanvas({
       draw()
     }
 
-    if (!hasCentered.current) {
+    if (!centered.current) {
       cameraRef.current.zoom = 1.0
       cameraRef.current.x = (window.innerWidth - (GRID_SIZE * CELL_SIZE)) / 2
       cameraRef.current.y = (window.innerHeight - (GRID_SIZE * CELL_SIZE)) / 2
-      hasCentered.current = true
+      centered.current = true
     }
 
     handleResize()
@@ -314,12 +285,12 @@ export default function GridCanvas({
     const loop = () => {
       if (!running) return
       draw()
-      animFrameRef.current = requestAnimationFrame(loop)
+      drawFrame.current = requestAnimationFrame(loop)
     }
     loop()
     return () => {
       running = false
-      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
+      if (drawFrame.current) cancelAnimationFrame(drawFrame.current)
     }
   }, [draw])
 
@@ -335,53 +306,49 @@ export default function GridCanvas({
     const col = Math.floor(worldX / CELL_SIZE)
     const row = Math.floor(worldY / CELL_SIZE)
 
-    if (col >= 0 && col < GRID_SIZE && row >= 0 && row < GRID_SIZE) {
-      return { x: col, y: row }
-    }
-    return null
+    return (col >= 0 && col < GRID_SIZE && row >= 0 && row < GRID_SIZE) ? { x: col, y: row } : null
   }, [])
 
   const handleMouseDown = useCallback((e) => {
-    isDragging.current = true
-    dragStart.current = { x: e.clientX, y: e.clientY }
-    lastCameraPos.current = { x: cameraRef.current.x, y: cameraRef.current.y }
+    dragging.current = true
+    dragStartPos.current = { x: e.clientX, y: e.clientY }
+    prevCam.current = { x: cameraRef.current.x, y: cameraRef.current.y }
     e.currentTarget.style.cursor = 'grabbing'
   }, [])
 
   const handleMouseMove = useCallback((e) => {
-    if (isDragging.current) {
-      const dx = e.clientX - dragStart.current.x
-      const dy = e.clientY - dragStart.current.y
-      cameraRef.current.x = lastCameraPos.current.x + dx / cameraRef.current.zoom
-      cameraRef.current.y = lastCameraPos.current.y + dy / cameraRef.current.zoom
+    if (dragging.current) {
+      const dx = e.clientX - dragStartPos.current.x
+      const dy = e.clientY - dragStartPos.current.y
+      cameraRef.current.x = prevCam.current.x + dx / cameraRef.current.zoom
+      cameraRef.current.y = prevCam.current.y + dy / cameraRef.current.zoom
     }
 
-    const cell = screenToGrid(e.clientX, e.clientY)
-    hoveredCell.current = cell
+    hoverCell.current = screenToGrid(e.clientX, e.clientY)
   }, [screenToGrid])
 
   const handleMouseUp = useCallback(
     (e) => {
       const wasDrag =
-        Math.abs(e.clientX - dragStart.current.x) > 3 ||
-        Math.abs(e.clientY - dragStart.current.y) > 3
+        Math.abs(e.clientX - dragStartPos.current.x) > 3 ||
+        Math.abs(e.clientY - dragStartPos.current.y) > 3
 
-      isDragging.current = false
-      e.currentTarget.style.cursor = cooldownActive ? 'not-allowed' : 'crosshair'
+      dragging.current = false
+      e.currentTarget.style.cursor = onCooldown ? 'not-allowed' : 'crosshair'
 
-      if (!wasDrag && !cooldownActive) {
+      if (!wasDrag && !onCooldown) {
         const cell = screenToGrid(e.clientX, e.clientY)
         if (cell && onCellClick) {
-          onCellClick(cell.x, cell.y, triggerPulseRef.current)
+          onCellClick(cell.x, cell.y, onPulse.current)
         }
       }
     },
-    [screenToGrid, onCellClick, cooldownActive]
+    [screenToGrid, onCellClick, onCooldown]
   )
 
   const handleMouseLeave = useCallback(() => {
-    isDragging.current = false
-    hoveredCell.current = null
+    dragging.current = false
+    hoverCell.current = null
   }, [])
 
   const handleWheel = useCallback((e) => {
@@ -421,7 +388,7 @@ export default function GridCanvas({
     <canvas
       ref={canvasRef}
       className="absolute inset-0 w-full h-full z-0 block bg-[#0b0f19]"
-      style={{ cursor: cooldownActive ? 'not-allowed' : 'crosshair' }}
+      style={{ cursor: onCooldown ? 'not-allowed' : 'crosshair' }}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}

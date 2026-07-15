@@ -4,76 +4,66 @@ import Sidebar from './components/Sidebar'
 import useSocket from './hooks/useSocket'
 import { getInitials } from './utils/initials'
 
-const COOLDOWN_DURATION = 3 // seconds
+const CD_TIME = 3
 
 function App() {
   const {
     socket,
     connected,
-    onlineUsers,
-    claimedCells,
-    clickCounts,
-    setClaimedCells,
+    usersOnline,
+    cells,
+    clicks,
+    setCells,
     claimCell,
-    triggerPulseRef,
-    userProfile,
+    onPulse,
+    profile,
     leaderboard,
   } = useSocket()
 
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [heatmapMode, setHeatmapMode] = useState(false)
-
-  const [cooldownActive, setCooldownActive] = useState(false)
-  const [cooldownRemaining, setCooldownRemaining] = useState(0)
-  const cooldownTimerRef = useRef(null)
-  const cooldownStartRef = useRef(0)
+  const [onCooldown, setOnCooldown] = useState(false)
+  const [cdLeft, setCdLeft] = useState(0)
+  const cdTimer = useRef(null)
+  const cdStart = useRef(0)
 
   const startCooldown = useCallback(() => {
-    setCooldownActive(true)
-    setCooldownRemaining(COOLDOWN_DURATION)
-    cooldownStartRef.current = performance.now()
+    setOnCooldown(true)
+    setCdLeft(CD_TIME)
+    cdStart.current = performance.now()
 
-    if (cooldownTimerRef.current) {
-      cancelAnimationFrame(cooldownTimerRef.current)
-    }
+    if (cdTimer.current) cancelAnimationFrame(cdTimer.current)
 
     const tick = () => {
-      const elapsed = (performance.now() - cooldownStartRef.current) / 1000
-      const remaining = Math.max(0, COOLDOWN_DURATION - elapsed)
-      setCooldownRemaining(remaining)
+      const elapsed = (performance.now() - cdStart.current) / 1000
+      const remaining = Math.max(0, CD_TIME - elapsed)
+      setCdLeft(remaining)
 
       if (remaining > 0) {
-        cooldownTimerRef.current = requestAnimationFrame(tick)
+        cdTimer.current = requestAnimationFrame(tick)
       } else {
-        setCooldownActive(false)
-        setCooldownRemaining(0)
+        setOnCooldown(false)
+        setCdLeft(0)
       }
     }
-    cooldownTimerRef.current = requestAnimationFrame(tick)
+    cdTimer.current = requestAnimationFrame(tick)
   }, [])
 
-  useEffect(() => {
-    return () => {
-      if (cooldownTimerRef.current) {
-        cancelAnimationFrame(cooldownTimerRef.current)
-      }
-    }
-  }, [])
+  useEffect(() => () => cdTimer.current && cancelAnimationFrame(cdTimer.current), [])
 
   const handleCellClick = useCallback(
     (x, y, triggerPulseFn) => {
-      if (cooldownActive) return
+      if (onCooldown) return
 
       const key = `${x},${y}`
-      const existing = claimedCells.get(key)
-      const currentSocketId = socket.current?.id
-
-      const isOwnCell = existing && existing.owner === currentSocketId
+      const existing = cells.get(key)
+      const socketId = socket.current?.id
+      const isOwnCell = existing && existing.owner === socketId
 
       if (existing && !isOwnCell && !existing.optimistic) return
 
       if (isOwnCell) {
-        setClaimedCells((prev) => {
+        setCells((prev) => {
           const next = new Map(prev)
           next.delete(key)
           return next
@@ -82,59 +72,48 @@ function App() {
         return
       }
 
-      triggerPulseRef.current = triggerPulseFn
+      onPulse.current = triggerPulseFn
 
-      const color = userProfile?.color || '#6366f1'
-      const label = getInitials(userProfile?.username)
+      const color = profile?.color || '#6366f1'
+      const label = getInitials(profile?.username)
 
-      setClaimedCells((prev) => {
+      setCells((prev) => {
         const next = new Map(prev)
         next.set(key, { 
           color, 
           label, 
-          owner: currentSocketId, 
-          ownerName: userProfile?.username || 'Anonymous', 
+          owner: socketId, 
+          ownerName: profile?.username || 'Anonymous', 
           optimistic: true 
         })
         return next
       })
 
       startCooldown()
-
       claimCell(x, y)
     },
-    [cooldownActive, claimedCells, startCooldown, claimCell, setClaimedCells, triggerPulseRef, userProfile, socket]
+    [onCooldown, cells, startCooldown, claimCell, setCells, onPulse, profile, socket]
   )
-
-  const stats = {
-    onlineUsers,
-    cellsClaimed: claimedCells.size,
-  }
 
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#0b0f19]">
-      {/* Grid Canvas background */}
       <GridCanvas
-        claimedCells={claimedCells}
-        clickCounts={clickCounts}
+        cells={cells}
+        clicks={clicks}
         onCellClick={handleCellClick}
-        currentUser={userProfile?.username || 'U'}
-        cooldownActive={cooldownActive}
-        cooldownRemaining={cooldownRemaining}
+        currentUser={profile?.username || 'U'}
+        onCooldown={onCooldown}
+        cdLeft={cdLeft}
         heatmapMode={heatmapMode}
       />
 
-      {/* Dynamic HUD Overlays Layer */}
       <div className="absolute inset-0 z-10 pointer-events-none">
-        
-        {/* Top-Left Floating Container (Header + Heatmap button) */}
         <div 
           onMouseDown={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
           className="absolute top-4 left-4 flex flex-col gap-2 pointer-events-auto"
         >
-          {/* Branding header widget */}
           <div
             className="flex items-center gap-3 px-4 py-2.5 rounded-xl backdrop-blur-md"
             style={{
@@ -177,7 +156,6 @@ function App() {
             />
           </div>
 
-          {/* Heatmap Mode Toggle Button */}
           <div className="flex items-center gap-2 p-1 rounded-xl backdrop-blur-md transition-all duration-300"
             style={{
               background: 'rgba(15, 23, 42, 0.6)',
@@ -202,17 +180,15 @@ function App() {
           </div>
         </div>
 
-        {/* Floating Sidebar */}
         <Sidebar
-          stats={stats}
+          stats={{ onlineUsers: usersOnline, cellsClaimed: cells.size }}
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           connected={connected}
-          userProfile={userProfile}
+          userProfile={profile}
           leaderboard={leaderboard}
         />
 
-        {/* Bottom-left interactive helper text indicator */}
         <div 
           onMouseDown={(e) => e.stopPropagation()}
           onWheel={(e) => e.stopPropagation()}
@@ -233,10 +209,8 @@ function App() {
           <span>Scroll to zoom • Drag to pan</span>
         </div>
 
-        {/* Cooldown Timer Overlay (Centered HUD overlay) */}
-        {cooldownActive && (
+        {onCooldown && (
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-20">
-            {/* Dark radial vignetting effect */}
             <div
               className="absolute inset-0"
               style={{
@@ -244,7 +218,6 @@ function App() {
               }}
             />
 
-            {/* Glowing progress badge */}
             <div
               onMouseDown={(e) => e.stopPropagation()}
               onWheel={(e) => e.stopPropagation()}
@@ -254,7 +227,6 @@ function App() {
                 animation: 'cooldownFadeIn 0.3s ease-out',
               }}
             >
-              {/* Circular SVG progress */}
               <div className="relative w-20 h-20">
                 <svg className="w-20 h-20 -rotate-90" viewBox="0 0 80 80">
                   <circle
@@ -270,7 +242,7 @@ function App() {
                     strokeWidth="4"
                     strokeLinecap="round"
                     strokeDasharray={`${2 * Math.PI * 34}`}
-                    strokeDashoffset={`${2 * Math.PI * 34 * (1 - cooldownRemaining / 3)}`}
+                    strokeDashoffset={`${2 * Math.PI * 34 * (1 - cdLeft / CD_TIME)}`}
                     style={{ transition: 'stroke-dashoffset 0.1s linear' }}
                   />
                   <defs>
@@ -281,7 +253,6 @@ function App() {
                   </defs>
                 </svg>
 
-                {/* Counter readout */}
                 <div className="absolute inset-0 flex items-center justify-center">
                   <span
                     className="text-2xl font-bold tabular-nums"
@@ -290,12 +261,11 @@ function App() {
                       textShadow: '0 0 20px rgba(99,102,241,0.5)',
                     }}
                   >
-                    {cooldownRemaining.toFixed(1)}
+                    {cdLeft.toFixed(1)}
                   </span>
                 </div>
               </div>
 
-              {/* Status Badge */}
               <div
                 className="px-4 py-1.5 rounded-full text-[11px] font-semibold uppercase tracking-widest"
                 style={{
