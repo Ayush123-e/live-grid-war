@@ -2,14 +2,12 @@ import { useState, useEffect } from 'react'
 
 export default function Sidebar({ stats, isOpen, onToggle, connected, userProfile, leaderboard }) {
   const [uptimeStr, setUptimeStr] = useState('00:00')
+  const [localStartTime] = useState(() => Date.now())
 
   useEffect(() => {
     const updateUptime = () => {
-      if (!stats.serverBootTime) {
-        setUptimeStr('00:00')
-        return
-      }
-      const elapsedSec = Math.max(0, Math.floor((Date.now() - stats.serverBootTime) / 1000))
+      const bootTime = stats.serverBootTime || localStartTime
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - bootTime) / 1000))
       const h = Math.floor(elapsedSec / 3600)
       const m = Math.floor((elapsedSec % 3600) / 60)
       const s = elapsedSec % 60
@@ -25,7 +23,7 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
     updateUptime()
     const timer = setInterval(updateUptime, 1000)
     return () => clearInterval(timer)
-  }, [stats.serverBootTime])
+  }, [stats.serverBootTime, localStartTime])
 
   return (
     <>
