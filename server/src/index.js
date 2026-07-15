@@ -20,7 +20,7 @@ app.use(cors({ origin: CORS_ORIGIN }))
 app.use(express.json())
 
 app.get('/', (_req, res) => {
-  res.send('🎮 Live Grid War Backend Server is running! Use /health to check status.')
+  res.send(' Live Grid War Backend Server is running! Use /health to check status.')
 })
 
 app.get('/health', (_req, res) => {
