@@ -1,12 +1,31 @@
 import { useState, useEffect } from 'react'
 
 export default function Sidebar({ stats, isOpen, onToggle, connected, userProfile, leaderboard }) {
-  const [time, setTime] = useState(new Date())
+  const [uptimeStr, setUptimeStr] = useState('00:00')
 
   useEffect(() => {
-    const timer = setInterval(() => setTime(new Date()), 1000)
+    const updateUptime = () => {
+      if (!stats.serverBootTime) {
+        setUptimeStr('00:00')
+        return
+      }
+      const elapsedSec = Math.max(0, Math.floor((Date.now() - stats.serverBootTime) / 1000))
+      const h = Math.floor(elapsedSec / 3600)
+      const m = Math.floor((elapsedSec % 3600) / 60)
+      const s = elapsedSec % 60
+      const pad = (n) => String(n).padStart(2, '0')
+      
+      if (h > 0) {
+        setUptimeStr(`${pad(h)}:${pad(m)}:${pad(s)}`)
+      } else {
+        setUptimeStr(`${pad(m)}:${pad(s)}`)
+      }
+    }
+
+    updateUptime()
+    const timer = setInterval(updateUptime, 1000)
     return () => clearInterval(timer)
-  }, [])
+  }, [stats.serverBootTime])
 
   return (
     <>
@@ -171,11 +190,7 @@ export default function Sidebar({ stats, isOpen, onToggle, connected, userProfil
               </svg>
             }
             label="Uptime"
-            value={time.toLocaleTimeString('en-US', {
-              hour: '2-digit',
-              minute: '2-digit',
-              hour12: false,
-            })}
+            value={uptimeStr}
             color="#f59e0b"
           />
         </div>

@@ -13,6 +13,7 @@ export default function useSocket() {
   const [leaderboard, setLeaderboard] = useState([])
   const [cells, setCells] = useState(() => new Map())
   const [clicks, setClicks] = useState(() => new Map())
+  const [serverBootTime, setServerBootTime] = useState(null)
   const onPulse = useRef(null)
 
   useEffect(() => {
@@ -50,6 +51,7 @@ export default function useSocket() {
       setGridSize(data.gridSize)
       setUsersOnline(data.onlineUsers)
       if (data.leaderboard) setLeaderboard(data.leaderboard)
+      if (data.serverBootTime) setServerBootTime(data.serverBootTime)
 
       const map = new Map()
       for (const cell of data.cells) {
@@ -194,6 +196,7 @@ export default function useSocket() {
     leaderboard,
     cells,
     clicks,
+    serverBootTime,
     setCells,
     claimCell,
     onPulse,

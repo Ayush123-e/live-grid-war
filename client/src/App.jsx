@@ -13,6 +13,7 @@ function App() {
     usersOnline,
     cells,
     clicks,
+    serverBootTime,
     setCells,
     claimCell,
     onPulse,
@@ -181,7 +182,7 @@ function App() {
         </div>
 
         <Sidebar
-          stats={{ onlineUsers: usersOnline, cellsClaimed: cells.size }}
+          stats={{ onlineUsers: usersOnline, cellsClaimed: cells.size, serverBootTime }}
           isOpen={sidebarOpen}
           onToggle={() => setSidebarOpen(!sidebarOpen)}
           connected={connected}
